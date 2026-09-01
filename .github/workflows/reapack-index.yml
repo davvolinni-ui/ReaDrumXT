@@ -13,7 +13,7 @@ jobs:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -26,8 +26,8 @@ jobs:
 
       - name: Validate and update index
         run: |
-          reapack-index --check .
           reapack-index --scan .
+          reapack-index --check .
 
       - name: Commit updated index
         run: |
