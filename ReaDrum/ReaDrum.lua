@@ -13,6 +13,7 @@
 --   [nomain] core/*.lua
 --   [nomain] reaper/*.lua
 --   [effect] Effects/*.jsfx > ReaDrum/
+
 local source = debug.getinfo(1, "S").source:sub(2)
 local scripts = assert(source:match("^(.*)[/\\]ReaDrum[/\\]ReaDrum%.lua$"), "ReaDrum must remain inside Scripts/ReaDrum")
 package.path = scripts .. "/?.lua;" .. scripts .. "/?/init.lua;" .. package.path
