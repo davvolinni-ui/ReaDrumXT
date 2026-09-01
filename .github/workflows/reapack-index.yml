@@ -31,7 +31,7 @@ jobs:
             exit 1
           fi
           echo "$output"
-          if ! output=$(reapack-index --check . 2>&1); then
+          if ! output=$(reapack-index --verbose --check . 2>&1); then
             echo "::error title=ReaPack validation failed::$output"
             exit 1
           fi
