@@ -26,13 +26,20 @@ jobs:
 
       - name: Validate and update index
         run: |
+          annotate_error() {
+            local message="$1"
+            message="${message//'%'/'%25'}"
+            message="${message//$'\r'/'%0D'}"
+            message="${message//$'\n'/'%0A'}"
+            echo "::error title=$2::$message"
+          }
           if ! output=$(reapack-index --scan . 2>&1); then
-            echo "::error title=ReaPack scan failed::$output"
+            annotate_error "$output" "ReaPack scan failed"
             exit 1
           fi
           echo "$output"
           if ! output=$(reapack-index --verbose --check . 2>&1); then
-            echo "::error title=ReaPack validation failed::$output"
+            annotate_error "$output" "ReaPack validation failed"
             exit 1
           fi
           echo "$output"
