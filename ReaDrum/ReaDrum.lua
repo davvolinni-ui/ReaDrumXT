@@ -1,8 +1,9 @@
 -- @description ReaDrumXT - Drum Sampler and Polymetric Step Sequencer
--- @version 0.1.0
+-- @version 0.1.1
 -- @author davvolinni-ui
 -- @changelog
---   Initial public release.
+--   Fixed simultaneous pad playback indicators.
+--   Added Clear Pad to the sequencer lane context menu.
 -- @link
 --   Support https://forum.cockos.com/showthread.php?t=310870
 --   Repository https://github.com/davvolinni-ui/ReaDrumXT

@@ -176,7 +176,7 @@ function UI.new(host, app)
     host=host, app=app, ctx=host.ImGui_CreateContext("ReaDrumXT", flags), open=true,
     property=1, info_open=false, info_tab="variations", parameter_open=false, editor_mode="properties", lane_toolbar_open=true, inspector_open=true, parameter_height=190, main_view="sequencer",
     inspector_mode="pads", edit_focus="steps", multi_select=false, show_active_only=false, pad_pitch_mode="transpose",
-    selected_pads={}, pad_flash_until={}, mixer_clip_until={}, mixer_meter_hold={}, mixer_meter_time={}, engine_trigger_token=false, waveform_cache={}, waveform_queue={}, waveform_queue_set={}, audition_due=false, audition_token=0, audition_release_token=0, paint_active=false, paint_value=false, paint_button=0, paint_lane=false, paint_last_step=false, paint_accent=false,
+    selected_pads={}, pad_flash_until={}, pad_trigger_tokens=false, mixer_clip_until={}, mixer_meter_hold={}, mixer_meter_time={}, engine_trigger_token=false, waveform_cache={}, waveform_queue={}, waveform_queue_set={}, audition_due=false, audition_token=0, audition_release_token=0, paint_active=false, paint_value=false, paint_button=0, paint_lane=false, paint_last_step=false, paint_accent=false,
     property_paint_active=false, property_paint_lane=false, property_paint_key=false, property_paint_position=false, property_paint_value=false,
     property_line_active=false, property_line_lane=false, property_line_key=false, property_line_position=false, property_line_value=false,
     property_reset_active=false, property_reset_lane=false, property_reset_key=false, property_reset_position=false,
@@ -235,7 +235,7 @@ function UI:bind_app(app)
   self.app=app
   app.audition_notes=self.audition_enabled~=false
   self.selected_pads={}
-  self.pad_flash_until={};self.engine_trigger_token=false;self.recent_midi_signature=false
+  self.pad_flash_until={};self.pad_trigger_tokens=false;self.engine_trigger_token=false;self.recent_midi_signature=false
   self.audition_due=false;self.paint_active=false;self.paint_lane=false;self.paint_last_step=false
   self.groove_popup_seen=false;self.groove_popup_active=false;self.groove_preview_entry=false;self.groove_nav_index=1;self.groove_nav_entry=false
   self.property_line_active=false;self.property_line_lane=false;self.property_line_key=false
@@ -276,7 +276,24 @@ function UI:audition_pad(index, velocity, replace_voice, pitch_semitones)
 end
 
 function UI:poll_triggered_pad()
-  local r,app=self.host,self.app;local track=app:find_track("sequencer");if not track then return end
+  local r,app=self.host,self.app
+  if r.gmem_attach and r.gmem_read then
+    r.gmem_attach("ReaDrumSnapshot")
+    local tokens=self.pad_trigger_tokens
+    if tokens==false then
+      tokens={};for index=1,128 do tokens[index]=math.floor((r.gmem_read(1399999+index) or 0)+.5) end
+      self.pad_trigger_tokens=tokens
+      return
+    end
+    local now=r.time_precise()
+    for index=1,128 do
+      local token=math.floor((r.gmem_read(1399999+index) or 0)+.5)
+      if token~=tokens[index] then tokens[index]=token;self.pad_flash_until[index]=now+.12 end
+    end
+    return
+  end
+  -- Compatibility fallback for hosts without the per-pad gmem mailbox.
+  local track=app:find_track("sequencer");if not track then return end
   local fx=app:dispatcher(track);local token=math.floor((r.TrackFX_GetParam(track,fx,87) or 0)+.5)
   if self.engine_trigger_token==false then self.engine_trigger_token=token;return end
   if token~=self.engine_trigger_token then
@@ -922,6 +939,8 @@ function UI:pad_context_menu(index,context)
       if r.ImGui_MenuItem(c,"Double length") then app:double_lane() end
       r.ImGui_EndMenu(c)
     end
+    section("REMOVE")
+    if r.ImGui_MenuItem(c,#lane_targets>1 and ("Clear "..#lane_targets.." Selected Pads") or "Clear Pad") then app:clear_pads(lane_targets) end
   else
     section("PAD EDIT")
     if r.ImGui_MenuItem(c,"Copy Pad") then app:copy_pad() end

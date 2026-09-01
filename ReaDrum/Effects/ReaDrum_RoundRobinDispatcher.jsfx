@@ -151,7 +151,9 @@ function release_oldest(note,sample_offset)local(i,o,p,oldest,j,oo,other,token)(
 // Choke through a normal note-off so RS5K can apply its short anti-click
 // release. CC120/123 hard-killed the waveform at an arbitrary sample value.
 function pad_choke(pad,sample_offset)(pad>=0&&pad<128?(release_piano_range(pad,sample_offset);ACTIVESEQ[pad]=0;1;):0;);
-function pad_flash(pad)(slider87=pad+1;slider88=(slider88%16777214)+1;);
+// Per-pad counters preserve simultaneous triggers until the UI can poll them.
+// The legacy last-pad sliders remain populated for older script versions.
+function pad_flash(pad)(slider87=pad+1;slider88=(slider88%16777214)+1;gmem[1400000+pad]=(gmem[1400000+pad]%16777214)+1;);
 function audition_slot(i)(i==0?slider89:i==1?slider90:i==2?slider91:i==3?slider92:i==4?slider93:i==5?slider94:i==6?slider95:i==7?slider96:i==8?slider97:i==9?slider98:i==10?slider99:i==11?slider100:i==12?slider101:i==13?slider102:i==14?slider103:slider104;);
 // Preserve normal self-choke for every fresh/retriggered hit. ACTIVESEQ stays
 // owned only when an earlier note ends at this exact boundary, which is the
