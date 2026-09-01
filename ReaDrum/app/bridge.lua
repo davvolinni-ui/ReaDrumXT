@@ -1,3 +1,4 @@
+-- @noindex
 local M={SECTION="ReaDrumBridge"}
 local function get(host,project,key)local _,value=host.GetProjExtState(project,M.SECTION,key);return value end
 function M.poll(host,project,last_id)

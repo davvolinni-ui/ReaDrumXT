@@ -1,3 +1,4 @@
+-- @noindex
 -- Standard MIDI File groove extraction and recursive user-library discovery.
 -- Parsed templates use ReaDrum's 960-ticks-per-quarter timing convention.
 local M={MAX_STEPS=256}

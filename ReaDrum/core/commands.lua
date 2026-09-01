@@ -1,3 +1,4 @@
+-- @noindex
 local Commands = {}
 
 local function copy_table(value, seen)

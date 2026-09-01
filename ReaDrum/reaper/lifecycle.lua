@@ -1,3 +1,4 @@
+-- @noindex
 local tags = require("ReaDrum.reaper.tags")
 local rs5k = require("ReaDrum.reaper.rs5k")
 local sampler_engine = require("ReaDrum.reaper.sampler_engine")

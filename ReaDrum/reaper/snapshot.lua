@@ -1,3 +1,4 @@
+-- @noindex
 -- Phase 3A protocol v1: fixed-width pad routing and one RR group only.
 local M={MAGIC=52443,PROTOCOL_VERSION=1,SCHEMA_VERSION=1,MAX_MEMBERS=16}
 M.runtime=require("ReaDrum.reaper.snapshot_v2")

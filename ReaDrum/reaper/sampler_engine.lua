@@ -1,3 +1,4 @@
+-- @noindex
 local allocator = require("ReaDrum.core.engine_allocator")
 local bank = require("ReaDrum.reaper.sampler_bank")
 

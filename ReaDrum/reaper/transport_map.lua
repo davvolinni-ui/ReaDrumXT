@@ -1,3 +1,4 @@
+-- @noindex
 -- Immutable Phase 3B.2a absolute-QN <-> project-time map. QN is quarter notes.
 local M={MAGIC=52445,VERSION=1,MAX_ANCHORS=8192,MAX_SIGNATURES=256};local MOD=2147483647
 local function finite(x)return type(x)=="number"and x==x and x~=math.huge and x~=-math.huge end

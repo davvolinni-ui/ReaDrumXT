@@ -1,3 +1,4 @@
+-- @noindex
 return {
   Adapter = require("ReaDrum.reaper.adapter"),
   tags = require("ReaDrum.reaper.tags"),
