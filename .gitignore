@@ -1,0 +1,15 @@
+# ReaPack indexer state and local tooling
+.reapack-index.cache
+.reapack-index.log
+Gemfile.lock
+
+# Development and user content must never enter the release repository
+backups/
+MIDI/
+Grooves/
+reports/
+tests/
+tools/
+*.readrum
+ReaDrum-error.log
+

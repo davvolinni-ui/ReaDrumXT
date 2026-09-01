@@ -1,0 +1,36 @@
+desc:ReaDrum Master Soft Clipper
+tags:dynamics saturation clipper ReaDrum
+options:no_meter
+
+slider1:-6<-18,0,0.1>-Threshold (dB)
+slider2:0<-18,12,0.1>-Post Gain (dB)
+slider3:1<0,1,1{Bypass,Enabled}>-Enabled
+slider4:0<-60,12,0.1>-Input Gain (dB)
+
+in_pin:Left
+in_pin:Right
+out_pin:Left
+out_pin:Right
+
+@slider
+threshold=10^(slider1/20);
+post=10^(slider2/20);
+input_gain=slider4<=-60?0:10^(slider4/20);
+
+function softclip(x)local(ax,sgn,over,span,y)(
+  ax=abs(x);sgn=x<0?-1:1;
+  ax<=threshold ? x : (
+    span=max(0.000001,1-threshold);
+    over=(ax-threshold)/span;
+    y=threshold+span*tanh(over);
+    sgn*y;
+  );
+);
+
+@sample
+spl0*=input_gain;spl1*=input_gain;
+slider3 ? (
+  ceiling=0.988553;
+  spl0=max(-ceiling,min(ceiling,softclip(spl0)*post));
+  spl1=max(-ceiling,min(ceiling,softclip(spl1)*post));
+);

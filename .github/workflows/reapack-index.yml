@@ -1,0 +1,41 @@
+name: Build ReaPack index
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  index:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+
+      - name: Install ReaPack indexer
+        run: gem install reapack-index
+
+      - name: Validate and update index
+        run: |
+          reapack-index --check .
+          reapack-index --scan .
+
+      - name: Commit updated index
+        run: |
+          if git diff --quiet -- index.xml; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.xml
+          git commit -m "Update ReaPack index [skip ci]"
+          git push

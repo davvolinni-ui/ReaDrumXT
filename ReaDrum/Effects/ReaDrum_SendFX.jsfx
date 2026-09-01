@@ -1,0 +1,133 @@
+desc:ReaDrum Shared Send FX
+tags:reverb delay ReaDrum
+options:no_meter
+
+slider1:-12<-60,6,0.1>-Reverb Return (dB)
+slider2:0.7<0,1,0.01>-Reverb Size
+slider3:0.65<0,0.99,0.01>-Reverb Decay
+slider4:0.45<0,1,0.01>-Reverb Damping
+slider5:-12<-60,6,0.1>-Delay Return (dB)
+slider6:3<0,6,1{1/4,1/8,1/8 dotted,1/16,1/16 dotted,1/32,1/4 triplet}>-Delay Division
+slider7:0.35<0,0.92,0.01>-Delay Feedback
+slider8:0.55<0,1,0.01>-Delay Tone
+slider9:1<0,1,1{Stereo,Ping Pong}>-Delay Mode
+slider10:1<0,1,1{Bypass,Enabled}>-Enabled
+
+in_pin:Bus 1 L
+in_pin:Bus 1 R
+in_pin:Bus 2 L
+in_pin:Bus 2 R
+in_pin:Bus 3 L
+in_pin:Bus 3 R
+in_pin:Bus 4 L
+in_pin:Bus 4 R
+in_pin:Bus 5 L
+in_pin:Bus 5 R
+in_pin:Bus 6 L
+in_pin:Bus 6 R
+in_pin:Bus 7 L
+in_pin:Bus 7 R
+in_pin:Bus 8 L
+in_pin:Bus 8 R
+in_pin:Bus 9 L
+in_pin:Bus 9 R
+in_pin:Bus 10 L
+in_pin:Bus 10 R
+in_pin:Bus 11 L
+in_pin:Bus 11 R
+in_pin:Bus 12 L
+in_pin:Bus 12 R
+in_pin:Bus 13 L
+in_pin:Bus 13 R
+in_pin:Bus 14 L
+in_pin:Bus 14 R
+in_pin:Bus 15 L
+in_pin:Bus 15 R
+in_pin:Bus 16 L
+in_pin:Bus 16 R
+in_pin:Reverb Send L
+in_pin:Reverb Send R
+in_pin:Delay Send L
+in_pin:Delay Send R
+out_pin:Bus 1 L
+out_pin:Bus 1 R
+out_pin:Bus 2 L
+out_pin:Bus 2 R
+out_pin:Bus 3 L
+out_pin:Bus 3 R
+out_pin:Bus 4 L
+out_pin:Bus 4 R
+out_pin:Bus 5 L
+out_pin:Bus 5 R
+out_pin:Bus 6 L
+out_pin:Bus 6 R
+out_pin:Bus 7 L
+out_pin:Bus 7 R
+out_pin:Bus 8 L
+out_pin:Bus 8 R
+out_pin:Bus 9 L
+out_pin:Bus 9 R
+out_pin:Bus 10 L
+out_pin:Bus 10 R
+out_pin:Bus 11 L
+out_pin:Bus 11 R
+out_pin:Bus 12 L
+out_pin:Bus 12 R
+out_pin:Bus 13 L
+out_pin:Bus 13 R
+out_pin:Bus 14 L
+out_pin:Bus 14 R
+out_pin:Bus 15 L
+out_pin:Bus 15 R
+out_pin:Bus 16 L
+out_pin:Bus 16 R
+out_pin:Reverb Send L
+out_pin:Reverb Send R
+out_pin:Delay Send L
+out_pin:Delay Send R
+
+@init
+DL=0;DR=400000;DELAY_CAP=400000;delay_pos=0;
+R1=800000;R2=900000;R3=1000000;R4=1100000;
+A1=1200000;A2=1250000;A3=1300000;A4=1350000;
+r1p=0;r2p=0;r3p=0;r4p=0;a1p=0;a2p=0;a3p=0;a4p=0;damp1=0;damp2=0;damp3=0;damp4=0;
+
+@slider
+rev_gain=slider1<=-60?0:10^(slider1/20);
+delay_gain=slider5<=-60?0:10^(slider5/20);
+size=0.65+slider2*0.7;
+// Nonlinear feedback gives the upper end enough resolution for long tails
+// while remaining safely below unity at the maximum setting.
+decay=0.35+sqrt(slider3)*0.64;
+damping=0.015+(1-slider4)*0.55;
+beats=slider6==0?1:slider6==1?.5:slider6==2?.75:slider6==3?.25:slider6==4?.375:slider6==5?.125:2/3;
+
+@sample
+slider10 ? (
+  rv_in=(spl32+spl33)*0.5;
+  srscale=srate/44100;
+  l1=max(64,min(99999,floor(1557*size*srscale)));l2=max(64,min(99999,floor(1617*size*srscale)));
+  l3=max(64,min(99999,floor(1491*size*srscale)));l4=max(64,min(99999,floor(1422*size*srscale)));
+  r1=R1[r1p];r2=R2[r2p];r3=R3[r3p];r4=R4[r4p];
+  damp1+=(r1-damp1)*damping;damp2+=(r2-damp2)*damping;damp3+=(r3-damp3)*damping;damp4+=(r4-damp4)*damping;
+  R1[r1p]=rv_in*.28+damp1*decay;R2[r2p]=rv_in*.28+damp2*decay;R3[r3p]=rv_in*.28+damp3*decay;R4[r4p]=rv_in*.28+damp4*decay;
+  r1p=(r1p+1)%l1;r2p=(r2p+1)%l2;r3p=(r3p+1)%l3;r4p=(r4p+1)%l4;
+  comb_l=(r1+r2-r3+r4)*0.42;comb_r=(r1-r2+r3+r4)*0.42;
+  alen1=max(32,floor(225*srscale));alen2=max(32,floor(341*srscale));ab1=A1[a1p];ab2=A2[a2p];
+  diff_l=-comb_l+ab1;diff_r=-comb_r+ab2;A1[a1p]=comb_l+ab1*.55;A2[a2p]=comb_r+ab2*.55;
+  a1p=(a1p+1)%alen1;a2p=(a2p+1)%alen2;
+  alen3=max(32,floor(113*srscale));alen4=max(32,floor(157*srscale));ab3=A3[a3p];ab4=A4[a4p];
+  rev_l=-diff_l+ab3;rev_r=-diff_r+ab4;A3[a3p]=diff_l+ab3*.5;A4[a4p]=diff_r+ab4*.5;
+  a3p=(a3p+1)%alen3;a4p=(a4p+1)%alen4;
+
+  bpm=max(20,tempo);delay_len=max(1,min(DELAY_CAP-1,floor(srate*60/bpm*beats)));
+  read_pos=delay_pos-delay_len;read_pos<0?read_pos+=DELAY_CAP;
+  dl=DL[read_pos];dr=DR[read_pos];
+  tone=0.02+slider8*0.75;delay_lp_l+=(dl-delay_lp_l)*tone;delay_lp_r+=(dr-delay_lp_r)*tone;
+  slider9 ? (DL[delay_pos]=spl34+delay_lp_r*slider7;DR[delay_pos]=spl35+delay_lp_l*slider7;)
+          : (DL[delay_pos]=spl34+delay_lp_l*slider7;DR[delay_pos]=spl35+delay_lp_r*slider7;);
+  delay_pos+=1;delay_pos>=DELAY_CAP?delay_pos=0;
+  spl0+=rev_l*rev_gain*1.65+delay_lp_l*delay_gain;
+  spl1+=rev_r*rev_gain*1.65+delay_lp_r*delay_gain;
+);
+spl32=0;spl33=0;spl34=0;spl35=0;

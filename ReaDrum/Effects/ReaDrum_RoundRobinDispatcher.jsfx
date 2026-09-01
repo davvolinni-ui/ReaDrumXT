@@ -1,0 +1,531 @@
+desc:ReaDrum Round Robin Dispatcher (Phase 3A protocol v1)
+options:gmem=ReaDrumSnapshot
+slider1:0<0,65535,1>-magic
+slider2:1<1,1,1>-protocol
+slider3:1<1,1,1>-schema
+slider4:1<0,16777215,1>-revision
+slider5:0<0,3,1>-mode
+slider6:1000000<0,1000000,1>-probability ppm
+slider7:2<0,3,1>-reset policy
+slider8:1<-2147483647,2147483647,1>-seed
+slider9:0<0,1,1>-advance on skip
+slider10:0<0,1,1>-advance each repeat
+slider11:3<1,16,1>-member count
+slider12:1<0,128,1>-member1
+slider13:2<0,128,1>-member2
+slider14:3<0,128,1>-member3
+slider15:0<0,128,1>-member4
+slider16:0<0,128,1>-member5
+slider17:0<0,128,1>-member6
+slider18:0<0,128,1>-member7
+slider19:0<0,128,1>-member8
+slider20:0<0,128,1>-member9
+slider21:0<0,128,1>-member10
+slider22:0<0,128,1>-member11
+slider23:0<0,128,1>-member12
+slider24:0<0,128,1>-member13
+slider25:0<0,128,1>-member14
+slider26:0<0,128,1>-member15
+slider27:0<0,128,1>-member16
+slider28:0<0,1,1>-explicit reset
+slider29:0<0,65535,1>-v2 magic
+slider30:0<0,2,1>-v2 protocol
+slider31:0<0,700000,1>-v2 gmem base
+slider32:0<0,262144,1>-v2 words
+slider33:0<0,2147483647,1>-v2 checksum
+slider34:0<0,16777215,1>-v2 commit token
+slider35:0<0,16777215,1>-v2 active revision
+slider36:0<0,16777215,1>-v2 pending revision
+slider37:0<0,16777215,1>-v2 promote token
+slider38:0<0,65535,1>-transport magic
+slider39:0<0,1,1>-transport protocol
+slider40:300000<0,700000,1>-transport gmem base
+slider41:0<0,20000,1>-transport words
+slider42:0<0,2147483647,1>-transport checksum
+slider43:0<0,16777215,1>-transport commit token
+slider44:0<0,16777215,1>-transport promote token
+slider45:0<-1,1,1>-budget admission status
+slider46:0<0,9007199254740991,1>-budget required future ons
+slider47:0<0,9007199254740991,1>-budget required block clocks
+slider48:0<0,9007199254740991,1>-budget required block ons
+slider49:0<0,9007199254740991,1>-budget required retained offs
+slider50:0<0,9007199254740991,1>-budget required off slots
+slider51:0<0,9007199254740991,1>-budget required reconstruction clocks
+slider52:0<0,1000000,1>-budget block QN micro
+slider53:0<0,7,1>-budget rejection code
+slider54:0<0,3,1>-runtime guard code
+slider55:0<0,8192,1>-future queue current
+slider56:0<0,8192,1>-future queue peak
+slider57:0<0,8192,1>-direct off queue current
+slider58:0<0,8192,1>-direct off queue peak
+slider59:0<0,3,1>-runtime fault latch
+slider60:0<0,9007199254740991,1>-tx stage block entries
+slider61:0<0,12288,1>-tx last current ons
+slider62:0<0,8192,1>-tx last future ons
+slider63:0<0,12288,1>-tx last owned ons
+slider64:0<-1,1,1>-tx last result
+slider65:0<0,1,1>Fill
+slider66:0<0,1,1>-map live MIDI notes to pads
+slider67:1<0,2,1>-pattern playback: 0 rendered MIDI, 1 continuous, 2 variation events
+slider68:0<0,384000,1>-diagnostic sample rate
+slider69:0<0,5,1>-diagnostic serialize stage
+slider70:0<0,64,1>-variation request
+slider71:0<0,16777215,1>-variation request token
+slider72:0<0,64,1>-diagnostic active variation
+slider73:0<0,64,1>-diagnostic pending variation
+slider74:0<0,1000000,0.000001>-diagnostic pending variation qn
+slider75:0<0,64,1>-diagnostic variation count
+slider76:0<0,5,1>-diagnostic variation quantization
+slider77:0<-1000000,1000000,0.000001>-diagnostic variation request qn
+slider78:0<-1000000,1000000,0.000001>-diagnostic variation boundary qn
+slider79:0<-1,16777215,1>-diagnostic variation request observed
+slider80:0<0,1,1>-diagnostic transport playing
+slider81:0<0,20000,1>-diagnostic active map words
+slider82:0<0,7,1>-reserved mapping compatibility
+slider83:0<0,128,1>-audition pad
+slider84:100<1,127,1>-audition velocity
+slider85:0<0,16777215,1>-audition request token
+slider86:0<0,16777215,1>-audition release token
+slider87:0<0,128,1>-last triggered pad
+slider88:0<0,16777215,1>-trigger token
+slider89:0<0,281474976710655,1>-audition queue 1
+slider90:0<0,281474976710655,1>-audition queue 2
+slider91:0<0,281474976710655,1>-audition queue 3
+slider92:0<0,281474976710655,1>-audition queue 4
+slider93:0<0,281474976710655,1>-audition queue 5
+slider94:0<0,281474976710655,1>-audition queue 6
+slider95:0<0,281474976710655,1>-audition queue 7
+slider96:0<0,281474976710655,1>-audition queue 8
+slider97:0<0,281474976710655,1>-audition queue 9
+slider98:0<0,281474976710655,1>-audition queue 10
+slider99:0<0,281474976710655,1>-audition queue 11
+slider100:0<0,281474976710655,1>-audition queue 12
+slider101:0<0,281474976710655,1>-audition queue 13
+slider102:0<0,281474976710655,1>-audition queue 14
+slider103:0<0,281474976710655,1>-audition queue 15
+slider104:0<0,281474976710655,1>-audition queue 16
+@init
+ext_noinit=1;
+// This effect generates MIDI from transport while its audio input is silent.
+// Keep REAPER from pruning @block before it can schedule the pattern.
+ext_tail_size=-1;
+ext_midi_bus=1;
+slider68=srate;
+MOD=2147483647;MUL=48271;PPM=1000000;HUGE=pow(10,100);SAFE_INT=9007199254740991;ROOT_NOTE=69;LIVE_BASE=36;AUDITION_KEY=4095;BUDGET_FUTURE=8192;BUDGET_BLOCK_CLOCKS=8192;BUDGET_BLOCK_ONS=4096;BUDGET_OFFS=8192;BUDGET_RECON=65536;MAX_BLOCK_SAMPLES=16384;cursor=0;direction=1;last_random=-1;rng=1;scheduler_rng=1;last_play=0;was_playing=0;last_reset=0;token_next=0;last_commit=-1;last_promote=-1;last_map_commit=-1;last_map_promote=-1;last_audition_request=-1;last_audition_release=-1;pending_words=0;pending_revision=0;active_words=0;active_budget_future=0;active_budget_block_ons=0;active_budget_retained=0;active_budget_block_qn_micro=0;map_pending_words=0;map_pending_revision=0;map_active_words=0;runtime_promote_latched=0;map_promote_latched=0;runtime_fault_latch=0;arrangement_gate=0;arrangement_gate_count=0;runtime_variation=1;pending_variation=0;pending_variation_q=0;last_variation_request=-1;LANES=700000;STEPS=710000;LANE_WORDS=12;STEP_WORDS=16;lane_count=0;OFFQ=4096;OFFQ_CAP=8192;OFFQ_WORDS=4;off_size=0;off_peak=0;ONQ=36864;ONQ_CAP=8192;ONQ_WORDS=7;on_size=0;on_peak=0;queue_seq=0;STAGE_OFF=1000000;STAGE_OFF_CAP=8192;STAGE_NOW=1032768;STAGE_NOW_CAP=12288;STAGE_FUTURE=1118784;STAGE_FUTURE_CAP=8192;SHADOW_LANES=1176128;SHADOW_LANE_WORDS=3;SHADOW_LANE_CAP=833;STAGE_EMIT=1178627;STAGE_EMIT_CAP=12288;stage_off_count=0;stage_now_size=0;stage_future_count=0;stage_emit_count=0;stage_owned_count=0;stage_seq=0;stage_fault=0;schedule_fault=0;memset(0,0,4096);
+MAX_GATE_PPM=16000000;
+HOT_LANES=900000;HOT_LANE_WORDS=3;BUDGET_LINKS=905000;VARS=1191000;VAR_WORDS=3;var_count=0;LANE_GROOVE=1269100;GROOVES=1270000;GROOVE_WORDS=260;
+  PADMAP=1265000;PAD_WORDS=15;GROUPS=1267000;GROUP_WORDS=28;GROUP_CAP=32;PADGROUP=1268000;ACTIVESEQ=1268200;ACTIVENOTE=1268400;LEGATO=1268600;group_count=0;group_output_pad=0;group_output_pass=1;memset(ACTIVESEQ,0,128);memset(ACTIVENOTE,ROOT_NOTE,128);memset(LEGATO,0,128);
+INPUT_BEND=1269000;INPUT_PAN=1269020;INPUT_SLIDE=1269040;INPUT_SHIFT=1269060;INPUT_GLIDE=1269080;i=0;loop(16,INPUT_BEND[i]=8192;INPUT_PAN[i]=1001;INPUT_SLIDE[i]=0;INPUT_SHIFT[i]=0;INPUT_GLIDE[i]=-1;i+=1;);
+SER_MAGIC=52446;SER_VERSION=2;SER_TRAILER=64245;SER_RUNTIME=1300000;SER_RUNTIME_CAP=262144;SER_MAP=1562144;SER_MAP_CAP=20000;
+function off_less(a,b)local(oa,ob,qa,qb,sa,sb)(oa=a*OFFQ_WORDS;ob=b*OFFQ_WORDS;qa=OFFQ[oa];qb=OFFQ[ob];sa=OFFQ[oa+1];sb=OFFQ[ob+1];(qa<qb)||((qa==qb)&&(sa<sb)););
+function off_swap(a,b)local(oa,ob,j,v)(oa=a*OFFQ_WORDS;ob=b*OFFQ_WORDS;j=0;loop(OFFQ_WORDS,v=OFFQ[oa+j];OFFQ[oa+j]=OFFQ[ob+j];OFFQ[ob+j]=v;j+=1;););
+function off_copy(dst,src)local(od,os,j)(od=dst*OFFQ_WORDS;os=src*OFFQ_WORDS;j=0;loop(OFFQ_WORDS,OFFQ[od+j]=OFFQ[os+j];j+=1;););
+function off_push_seq(d,seq,p,n)local(i,parent,more,o,put)(put=off_size<OFFQ_CAP;put?(i=off_size;off_size+=1;off_peak=max(off_peak,off_size);o=i*OFFQ_WORDS;OFFQ[o]=d;OFFQ[o+1]=seq;OFFQ[o+2]=p;OFFQ[o+3]=n;more=1;while(more)(i>0?(parent=floor((i-1)/2);off_less(i,parent)?(off_swap(i,parent);i=parent;):(more=0;);):(more=0;);););put;);
+function off_push(d,p,n)local(put)(put=off_push_seq(d,queue_seq,p,n);put?queue_seq+=1;put;);
+function off_pop()local(i,left,right,best,more)(off_size>0?(off_size-=1;off_size>0?(off_copy(0,off_size);i=0;more=1;while(more)(left=i*2+1;left<off_size?(right=left+1;best=left;right<off_size&&off_less(right,left)?best=right;off_less(best,i)?(off_swap(best,i);i=best;):(more=0;);):(more=0;);););););
+function on_less(a,b)local(oa,ob,qa,qb,sa,sb)(oa=a*ONQ_WORDS;ob=b*ONQ_WORDS;qa=ONQ[oa];qb=ONQ[ob];sa=ONQ[oa+1];sb=ONQ[ob+1];(qa<qb)||((qa==qb)&&(sa<sb)););
+function on_swap(a,b)local(oa,ob,j,v)(oa=a*ONQ_WORDS;ob=b*ONQ_WORDS;j=0;loop(ONQ_WORDS,v=ONQ[oa+j];ONQ[oa+j]=ONQ[ob+j];ONQ[ob+j]=v;j+=1;););
+function on_copy(dst,src)local(od,os,j)(od=dst*ONQ_WORDS;os=src*ONQ_WORDS;j=0;loop(ONQ_WORDS,ONQ[od+j]=ONQ[os+j];j+=1;););
+function on_push_seq(on,seq,pad,note,vel,pan,gate)local(i,parent,more,o,put)(put=on_size<ONQ_CAP;put?(i=on_size;on_size+=1;on_peak=max(on_peak,on_size);o=i*ONQ_WORDS;ONQ[o]=on;ONQ[o+1]=seq;ONQ[o+2]=pad;ONQ[o+3]=note;ONQ[o+4]=vel;ONQ[o+5]=pan;ONQ[o+6]=gate;more=1;while(more)(i>0?(parent=floor((i-1)/2);on_less(i,parent)?(on_swap(i,parent);i=parent;):(more=0;);):(more=0;);););put;);
+function on_push(on,pad,note,vel,pan,gate)local(put)(put=on_push_seq(on,queue_seq,pad,note,vel,pan,gate);put?queue_seq+=1;put;);
+function on_pop()local(i,left,right,best,more)(on_size>0?(on_size-=1;on_size>0?(on_copy(0,on_size);i=0;more=1;while(more)(left=i*2+1;left<on_size?(right=left+1;best=left;right<on_size&&on_less(right,left)?best=right;on_less(best,i)?(on_swap(best,i);i=best;):(more=0;);):(more=0;);););););
+function stage_now_less(a,b)local(oa,ob,qa,qb,sa,sb)(oa=a*ONQ_WORDS;ob=b*ONQ_WORDS;qa=STAGE_NOW[oa];qb=STAGE_NOW[ob];sa=STAGE_NOW[oa+1];sb=STAGE_NOW[ob+1];(qa<qb)||((qa==qb)&&(sa<sb)););
+function stage_now_swap(a,b)local(oa,ob,j,v)(oa=a*ONQ_WORDS;ob=b*ONQ_WORDS;j=0;loop(ONQ_WORDS,v=STAGE_NOW[oa+j];STAGE_NOW[oa+j]=STAGE_NOW[ob+j];STAGE_NOW[ob+j]=v;j+=1;););
+function stage_now_copy(dst,src)local(od,os,j)(od=dst*ONQ_WORDS;os=src*ONQ_WORDS;j=0;loop(ONQ_WORDS,STAGE_NOW[od+j]=STAGE_NOW[os+j];j+=1;););
+function stage_now_push_seq(on,seq,pad,note,vel,pan,gate)local(i,parent,more,o,put)(put=stage_now_size<STAGE_NOW_CAP;put?(i=stage_now_size;stage_now_size+=1;o=i*ONQ_WORDS;STAGE_NOW[o]=on;STAGE_NOW[o+1]=seq;STAGE_NOW[o+2]=pad;STAGE_NOW[o+3]=note;STAGE_NOW[o+4]=vel;STAGE_NOW[o+5]=pan;STAGE_NOW[o+6]=gate;gate>0?(stage_owned_count+=1;);more=1;while(more)(i>0?(parent=floor((i-1)/2);stage_now_less(i,parent)?(stage_now_swap(i,parent);i=parent;):(more=0;);):(more=0;););):(stage_fault=1;);put;);
+function stage_now_pop()local(i,left,right,best,more)(stage_now_size>0?(stage_now_size-=1;stage_now_size>0?(stage_now_copy(0,stage_now_size);i=0;more=1;while(more)(left=i*2+1;left<stage_now_size?(right=left+1;best=left;right<stage_now_size&&stage_now_less(right,left)?best=right;stage_now_less(best,i)?(stage_now_swap(best,i);i=best;):(more=0;);):(more=0;);););););
+function stop_all_pads()local(p)(p=0;loop(128,midi_bus=floor(p/16);midisend(0,0xB0|(p%16),123,0);p+=1;););
+function reset_input_performance()local(i)(i=0;loop(16,INPUT_BEND[i]=8192;INPUT_PAN[i]=1001;INPUT_SLIDE[i]=0;INPUT_SHIFT[i]=0;INPUT_GLIDE[i]=-1;i+=1;););
+function reset_state(flush)local(i,o,p,n)(rng=max(1,abs(slider8)|0)%(MOD-1);cursor=0;direction=1;last_random=-1;flush?(i=0;loop(1024,o=i*4;0[o]?(p=0[o+1];midi_bus=floor(p/16);midisend(0,0x80|(p%16),ACTIVENOTE[p],0);0[o]=0;);i+=1;);while(off_size>0)(p=OFFQ[2];n=OFFQ[3];midi_bus=floor(p/16);midisend(0,0x80|(p%16),n,0);off_pop(););off_peak=0;memset(ACTIVESEQ,0,128);memset(ACTIVENOTE,ROOT_NOTE,128);););
+function rnd()(rng=(rng*MUL)%MOD;rng;);
+function modword(v)local(r)(r=abs(v)%MOD;v<0&&r?MOD-r:r;);
+function mapword(v)local(x)(x=v>=0?floor(v*1000000+.5):ceil(v*1000000-.5);modword(x););
+function choose()local(n,d,x)(n=slider11|0;slider5==0?(x=cursor;cursor=(cursor+1)%n;):slider5==1?(x=cursor;n>1?(cursor+=direction;cursor>=n?(cursor=n-2;direction=-1;):cursor<0?(cursor=1;direction=1;););):slider5==2?(x=(rnd()-1)%n;):(n==1?x=0:last_random<0?x=(rnd()-1)%n:(d=(rnd()-1)%(n-1);x=d>=last_random?d+1:d;);last_random=x;);x;);
+function member_at(i)(i==0?slider12:i==1?slider13:i==2?slider14:i==3?slider15:i==4?slider16:i==5?slider17:i==6?slider18:i==7?slider19:i==8?slider20:i==9?slider21:i==10?slider22:i==11?slider23:i==12?slider24:i==13?slider25:i==14?slider26:slider27;);
+function alloc(p,n,voice)local(i,o,put)(i=0;put=0;loop(1024,o=((token_next+i)%1024)*4;!put&&!0[o]?(0[o]=1;0[o+1]=p;0[o+2]=n;0[o+3]=voice;token_next=(token_next+i+1)%1024;put=1;);i+=1;););
+function pad_live_gated(pad)local(i,b,si,base,gated)(gated=0;i=0;loop(lane_count,b=i*LANE_WORDS;LANES[b+1]==runtime_variation&&LANES[b+2]-1==pad?(si=0;loop(LANES[b+3],base=(LANES[b+8]+si)*STEP_WORDS;STEPS[base]==1&&STEPS[base+9]!=PPM?gated=1;si+=1;););i+=1;);gated;);
+function release_piano_range(p,sample_offset)local(n)(midi_bus=floor(p/16);n=max(0,ROOT_NOTE-12);loop(min(127,ROOT_NOTE+12)-n+1,midisend(sample_offset,0x80|(p%16),n,0);n+=1;);ACTIVENOTE[p]=ROOT_NOTE;);
+function release_all(note,sample_offset)local(i,o,p,voice,token)(i=0;loop(1024,o=i*4;0[o]&&0[o+2]==note?(p=0[o+1];voice=0[o+3];token=-(voice+1);0[o]=0;ACTIVESEQ[p]==token?(release_piano_range(p,sample_offset);ACTIVESEQ[p]=0;););i+=1;););
+function release_oldest(note,sample_offset)local(i,o,p,oldest,j,oo,other,token)(oldest=HUGE;i=0;loop(1024,o=i*4;0[o]&&0[o+2]==note&&0[o+3]<oldest?oldest=0[o+3];i+=1;);oldest<HUGE?(token=-(oldest+1);i=0;loop(1024,o=i*4;0[o]&&0[o+2]==note&&0[o+3]==oldest?(p=0[o+1];0[o]=0;other=0;j=0;loop(1024,oo=j*4;0[oo]&&0[oo+1]==p?other=1;j+=1;);!other&&ACTIVESEQ[p]==token?(pad_live_gated(p)?(midi_bus=floor(p/16);midisend(sample_offset,0x80|(p%16),ACTIVENOTE[p],0););ACTIVESEQ[p]=0;ACTIVENOTE[p]=ROOT_NOTE;););i+=1;);););
+// Choke through a normal note-off so RS5K can apply its short anti-click
+// release. CC120/123 hard-killed the waveform at an arbitrary sample value.
+function pad_choke(pad,sample_offset)(pad>=0&&pad<128?(release_piano_range(pad,sample_offset);ACTIVESEQ[pad]=0;1;):0;);
+function pad_flash(pad)(slider87=pad+1;slider88=(slider88%16777214)+1;);
+function audition_slot(i)(i==0?slider89:i==1?slider90:i==2?slider91:i==3?slider92:i==4?slider93:i==5?slider94:i==6?slider95:i==7?slider96:i==8?slider97:i==9?slider98:i==10?slider99:i==11?slider100:i==12?slider101:i==13?slider102:i==14?slider103:slider104;);
+// Preserve normal self-choke for every fresh/retriggered hit. ACTIVESEQ stays
+// owned only when an earlier note ends at this exact boundary, which is the
+// one case where the sampler must receive the next note without a pre-choke so
+// Gate+Glide can retarget its active voice.
+function pad_apply_choke(pad,sample_offset)local(b,g,p,i,t,did)(b=pad*PAD_WORDS;g=PADMAP[b]|0;did=0;PADMAP[b+1]&&!LEGATO[pad]?(did=max(did,pad_choke(pad,sample_offset)););g>0?(p=0;loop(128,p!=pad&&PADMAP[p*PAD_WORDS]==g?(did=max(did,pad_choke(p,sample_offset)););p+=1;););i=0;loop(PADMAP[b+7],t=PADMAP[b+8+i]|0;t>=0?(did=max(did,pad_choke(t,sample_offset)););i+=1;);did;);
+function load_pending()local(base,n,i,c,v,pos,len,tag,ok,done)(base=slider31|0;n=slider32|0;ok=slider29==52444&&slider30==2&&n>=18&&n<=262144&&gmem[base]==52444&&gmem[base+1]==2&&gmem[base+2]==n&&gmem[base+3]==slider33;ok?(c=1;i=6;loop(n-5,v=gmem[base+8+i];c=(c*48271+modword(v))%MOD;i+=1;);ok=c==slider33;);ok?(pos=17;done=0;loop(n-16,ok&&!done?(tag=gmem[base+8+pos];len=gmem[base+8+pos+1];(len<0||pos+1+len>n)?ok=0:tag==255?(ok=len==0&&pos+1==n;done=1;):pos+=2+len;););ok=ok&&done;);ok?(i=1;loop(n,100000[i-1]=gmem[base+8+i];i+=1;);pending_words=n;pending_revision=100000[5]|0;slider36=pending_revision;runtime_promote_latched=0;map_pending_words>0&&map_pending_revision!=pending_revision?(map_pending_words=0;map_pending_revision=0;map_promote_latched=0;);):(pending_words=0;pending_revision=0;slider36=0;runtime_promote_latched=0;);ok;);
+function reset_groups()local(i,b)(i=0;loop(group_count,b=i*GROUP_WORDS;GROUPS[b+24]=0;GROUPS[b+25]=1;GROUPS[b+26]=-1;GROUPS[b+27]=max(1,abs(GROUPS[b+4])%(MOD-1));i+=1;););
+function groove_shift(v,q,trim)local(b,count,num,den,unit,slot,amount)(b=(v-1)*GROOVE_WORDS;count=GROOVES[b]|0;count>0?(num=GROOVES[b+1];den=GROOVES[b+2];unit=4*num/den;slot=floor(q/unit+.5);amount=max(0,min(100000,GROOVES[b+3]+trim));abs(q-slot*unit)<0.00000001?GROOVES[b+4+(slot%count)]/960*amount/100000:0;):0;);
+function reset_schedule_history(clear_fault)local(i,b)(i=0;loop(lane_count,b=i*LANE_WORDS;LANES[b+9]=0;LANES[b+10]=0;i+=1;);on_size=0;on_peak=0;reset_groups();clear_fault?schedule_fault=0;);
+function build_scheduler()local(pos,tag,n,f,li,si,cur,step_cursor,p,g,j,b,vi,hot,old_lane_count,oi,ob,hb,matched)(
+  hot=(play_state&1)&&lane_count>0;old_lane_count=lane_count;
+  hot?(i=0;loop(old_lane_count,b=i*LANE_WORDS;hb=i*HOT_LANE_WORDS;HOT_LANES[hb]=LANES[b];HOT_LANES[hb+1]=LANES[b+9];HOT_LANES[hb+2]=LANES[b+10];i+=1;););
+  lane_count=0;group_count=0;var_count=0;pos=17;cur=-1;step_cursor=0;scheduler_rng=1;(!(play_state&1)||runtime_variation<1||runtime_variation>400000[9])?(runtime_variation=400000[6];pending_variation=0;);memset(PADMAP,0,128*PAD_WORDS);memset(PADGROUP,0,128);memset(LANE_GROOVE,0,SHADOW_LANE_CAP);memset(GROOVES,0,64*GROOVE_WORDS);
+  while(pos<active_words)(
+    tag=400000[pos-1];n=400000[pos];f=pos+1;
+    tag==1?(scheduler_rng=max(1,400000[f+1]%(MOD-1));):
+    tag==2&&n==6?(vi=var_count*VAR_WORDS;VARS[vi]=400000[f+2];VARS[vi+1]=400000[f+3];VARS[vi+2]=400000[f+4];var_count+=1;):
+    tag==8&&n>=6?(
+      vi=(400000[f]-1)*GROOVE_WORDS;GROOVES[vi]=min(256,400000[f+3]);GROOVES[vi+1]=400000[f+1];GROOVES[vi+2]=400000[f+2];GROOVES[vi+3]=400000[f+4];j=0;loop(GROOVES[vi],GROOVES[vi+4+j]=400000[f+5+j];j+=1;);
+    ):
+    tag==3?(
+      li=lane_count;lane_count+=1;b=li*LANE_WORDS;LANES[b]=400000[f];LANES[b+1]=400000[f+1];LANES[b+2]=400000[f+2];LANES[b+3]=400000[f+3];LANES[b+4]=400000[f+4];LANES[b+5]=400000[f+5];LANES[b+6]=400000[f+6];LANES[b+7]=400000[f+7];LANES[b+8]=step_cursor;LANES[b+9]=0;LANES[b+10]=0;LANES[b+11]=400000[f+8];LANE_GROOVE[li]=n>=10?400000[f+9]:1;
+      hot?(matched=0;oi=0;loop(old_lane_count,!matched?(hb=oi*HOT_LANE_WORDS;HOT_LANES[hb]==LANES[b]?(LANES[b+9]=HOT_LANES[hb+1];LANES[b+10]=HOT_LANES[hb+2];matched=1;););oi+=1;););
+      cur=li;si=0;
+    ):
+    tag==4&&cur>=0?(
+      STEPS[(LANES[cur*LANE_WORDS+8]+si)*STEP_WORDS]=400000[f];STEPS[(LANES[cur*LANE_WORDS+8]+si)*STEP_WORDS+1]=400000[f+1];STEPS[(LANES[cur*LANE_WORDS+8]+si)*STEP_WORDS+2]=400000[f+2];STEPS[(LANES[cur*LANE_WORDS+8]+si)*STEP_WORDS+3]=400000[f+4];STEPS[(LANES[cur*LANE_WORDS+8]+si)*STEP_WORDS+4]=400000[f+5];STEPS[(LANES[cur*LANE_WORDS+8]+si)*STEP_WORDS+5]=400000[f+6];STEPS[(LANES[cur*LANE_WORDS+8]+si)*STEP_WORDS+6]=400000[f+7];STEPS[(LANES[cur*LANE_WORDS+8]+si)*STEP_WORDS+7]=400000[f+8];STEPS[(LANES[cur*LANE_WORDS+8]+si)*STEP_WORDS+8]=400000[f+9];STEPS[(LANES[cur*LANE_WORDS+8]+si)*STEP_WORDS+9]=400000[f+10];STEPS[(LANES[cur*LANE_WORDS+8]+si)*STEP_WORDS+10]=400000[f+11];STEPS[(LANES[cur*LANE_WORDS+8]+si)*STEP_WORDS+11]=400000[f+12];STEPS[(LANES[cur*LANE_WORDS+8]+si)*STEP_WORDS+12]=400000[f+13];STEPS[(LANES[cur*LANE_WORDS+8]+si)*STEP_WORDS+13]=400000[f+3];STEPS[(LANES[cur*LANE_WORDS+8]+si)*STEP_WORDS+14]=n>=16?400000[f+14]:0;si+=1;step_cursor+=1;
+    ):
+    tag==5&&(n==15||n==16||n==17||n==18)?(
+      p=(400000[f]-1)*PAD_WORDS;PADMAP[p]=400000[f+2];PADMAP[p+1]=400000[f+3];PADMAP[p+2]=400000[f+5];j=0;loop(4,PADMAP[p+3+j]=400000[f+6+j]-1;j+=1;);PADMAP[p+7]=400000[f+10];j=0;loop(4,PADMAP[p+8+j]=400000[f+11+j]-1;j+=1;);PADMAP[p+12]=n>=16?400000[f+15]:0;PADMAP[p+13]=n>=17?400000[f+16]:1;PADMAP[p+14]=n==18?400000[f+17]:1;
+    ):
+    tag==7&&n==24&&group_count<GROUP_CAP?(
+      g=group_count;b=g*GROUP_WORDS;j=0;loop(24,GROUPS[b+j]=400000[f+j];j+=1;);GROUPS[b]-=1;j=0;loop(16,GROUPS[b+8+j]-=1;j+=1;);GROUPS[b+24]=0;GROUPS[b+25]=1;GROUPS[b+26]=-1;GROUPS[b+27]=max(1,abs(GROUPS[b+4])%(MOD-1));PADGROUP[GROUPS[b]]=g+1;group_count+=1;
+    ):
+    tag==255?(pos=active_words+1;);
+    pos+=2+n;
+  );
+  // Lane clocks are scheduled one QN ahead. Preserve that already-committed
+  // future queue during a hot edit as well as sounding-note off ownership;
+  // clearing it while retaining the advanced clocks creates a one-QN dropout.
+  // The edited snapshot naturally takes over as the look-ahead rolls forward.
+  hot?(schedule_fault=0;):(reset_schedule_history(1));
+);
+function load_map()local(base,n,i,c,v,ok,p,q,t,pt,pq)(base=slider40|0;n=slider41|0;ok=slider38==52445&&slider39==1&&n>=16&&n<=20000&&pending_words>0&&gmem[base]==52445&&gmem[base+1]==1&&gmem[base+2]==n&&gmem[base+3]==slider42;ok?(c=1;i=5;loop(n-4,v=gmem[base+8+i];c=(c*48271+mapword(v))%MOD;i+=1;);ok=c==slider42;);ok?(gmem[base+8+5]!=pending_revision||gmem[base+8+6]!=srate?(ok=0;):(p=13;pt=-HUGE;pq=-HUGE;loop(gmem[base+8+11],ok?(q=gmem[base+8+p];t=gmem[base+8+p+1];(!((q==q)&&(t==t))||q<=pq||t<=pt)?ok=0:(pq=q;pt=t;p+=2;);););););ok?(i=1;loop(n,950000[i-1]=gmem[base+8+i];i+=1;);map_pending_words=n;map_pending_revision=950000[4]|0;map_promote_latched=0;):(map_pending_words=0;map_pending_revision=0;map_promote_latched=0;);ok;);
+function budget_add(a,b)(a>=SAFE_INT-b?SAFE_INT:a+b;);
+function budget_mul(a,b)(a<=0||b<=0?0:a>SAFE_INT/b?SAFE_INT:a*b;);
+function budget_int32(v)(v==floor(v)&&v>=-2147483647&&v<=2147483647;);
+// Never subtract an epsilon before ceil: for a legal but very long rational
+// clock, the true positive occupancy may be smaller than that epsilon. A
+// floating boundary overcount is safe; an undercount is not.
+function budget_occ(window,u,count,swing)local(period,cycles,rem,shift,shortgap,extra,x)(window<=0?0:count%2==0?(x=window/(u*count);ceil(x);):(period=u*2*count;cycles=floor(window/period);rem=window-cycles*period;shift=u*abs(swing)/200000;shortgap=u*count-shift;extra=rem<=0?0:rem<=shortgap?1:2;min(SAFE_INT,cycles*2+extra);));
+function budget_pending()local(ok,pos,tag,rec_len,f,cur,active,expected,seen,step_count,lane_num,lane_den,phase,swing,lane_unit,lane_expansion,enabled,repeat_count,repeat_num,repeat_den,timing_ticks,gate_ppm,repeat_ix,spacing,delay,future,burst,retained,block_qn,recon_qn,i,p,q0,t0,q1,t1,span,ended,groove_maximum,groove_enabled,groove_count,groove_amount,groove_offset,j,margin,budget_swing)(
+ ok=1;groove_maximum=0;groove_amount=0;slider45=0;slider46=0;slider47=0;slider48=0;slider49=0;slider50=0;slider51=0;slider52=0;slider53=0;
+ memset(BUDGET_LINKS,0,128);
+ map_pending_words<16?(ok=0;slider53=7;);
+ ok?(block_qn=0;i=0;loop(950000[10]-1,p=12+i*2;q0=950000[p];t0=950000[p+1];q1=950000[p+2];t1=950000[p+3];span=(q1-q0)/(t1-t0)*MAX_BLOCK_SAMPLES/srate;span>block_qn?block_qn=span;i+=1;);block_qn=ceil(block_qn*1000000)/1000000;slider52=block_qn*1000000;recon_qn=max(0,950000[7])+1;block_qn>1?(ok=0;slider53=1;););
+ pos=17;cur=0;active=0;expected=0;seen=0;ended=0;
+ loop(pending_words-16,
+  ok&&!ended?(
+   tag=100000[pos-1];rec_len=100000[pos];f=pos+1;
+    (rec_len<0||rec_len!=floor(rec_len)||pos+1+rec_len>pending_words)?(ok=0;slider53=7;):tag==5?(
+      (rec_len!=15&&rec_len!=16&&rec_len!=17&&rec_len!=18)||!budget_int32(100000[f])||100000[f]<1||100000[f]>128||!budget_int32(100000[f+5])||100000[f+5]<0||100000[f+5]>4?(ok=0;slider53=7;):(BUDGET_LINKS[(100000[f]|0)-1]=100000[f+5];);
+    ):tag==2?(
+     groove_maximum=0;groove_amount=0;
+    ):tag==8?(
+     rec_len<6?(ok=0;slider53=7;):(
+      groove_count=100000[f+3];groove_amount=100000[f+4];(rec_len!=5+groove_count||!budget_int32(100000[f])||100000[f]<1||100000[f]>64||!budget_int32(100000[f+1])||100000[f+1]<1||!budget_int32(100000[f+2])||100000[f+2]<1||!budget_int32(groove_count)||groove_count<1||groove_count>256||!budget_int32(groove_amount)||groove_amount<0||groove_amount>100000)?(ok=0;slider53=7;):(j=0;loop(groove_count,groove_offset=100000[f+5+j];!budget_int32(groove_offset)||abs(groove_offset)>960?(ok=0;slider53=7;):groove_maximum=max(groove_maximum,abs(groove_offset));j+=1;););
+     );
+    ):tag==3?(
+     (rec_len!=9&&rec_len!=10)?(ok=0;slider53=7;):(
+     cur&&seen!=expected?(ok=0;slider53=7;);
+      cur=1;step_count=100000[f+3];lane_num=100000[f+4];lane_den=100000[f+5];phase=100000[f+6];swing=100000[f+7];groove_enabled=rec_len<10?1:100000[f+9];lane_expansion=1+BUDGET_LINKS[(100000[f+2]|0)-1];expected=step_count;seen=0;active=100000[f+1]==100000[6];
+     (!budget_int32(step_count)||!budget_int32(lane_num)||!budget_int32(lane_den)||!budget_int32(phase)||!budget_int32(swing)||!budget_int32(groove_enabled)||(groove_enabled!=0&&groove_enabled!=1)||step_count<1||step_count>4096||lane_num<1||lane_den<1||phase<0||phase>=step_count||abs(swing)>100000)?(ok=0;slider53=7;):active?(
+      lane_unit=4*lane_num/lane_den;margin=groove_enabled?groove_maximum*max(0,min(100000,groove_amount+swing))/(960*100000)*2:0;budget_swing=groove_enabled&&groove_maximum>0?0:swing;slider47=budget_add(slider47,budget_occ(block_qn+margin,lane_unit,1,budget_swing));slider51=budget_add(slider51,budget_occ(recon_qn+margin,lane_unit,1,budget_swing));
+     );
+     );
+    ):tag==4?(
+     (rec_len!=15&&rec_len!=16)?(ok=0;slider53=7;):!cur?(ok=0;slider53=7;):(
+      seen+=1;active?(
+       enabled=100000[f];repeat_count=100000[f+5];repeat_num=100000[f+6];repeat_den=100000[f+7];timing_ticks=100000[f+9];gate_ppm=100000[f+10];
+       (seen>step_count||!budget_int32(enabled)||!budget_int32(repeat_count)||!budget_int32(repeat_num)||!budget_int32(repeat_den)||!budget_int32(timing_ticks)||!budget_int32(gate_ppm)||(enabled!=0&&enabled!=1&&enabled!=2&&enabled!=3)||repeat_count<1||repeat_count>64||repeat_num<1||repeat_den<1||timing_ticks< -960||timing_ticks>960||gate_ppm<0||gate_ppm>MAX_GATE_PPM)?(ok=0;slider53=7;):enabled!=0?(
+         spacing=4*repeat_num/repeat_den;repeat_ix=0;loop(repeat_count,delay=timing_ticks/960+repeat_ix*spacing;future=budget_mul(budget_occ(1+delay+margin,lane_unit,step_count,swing),lane_expansion);burst=budget_mul(budget_occ(block_qn+margin,lane_unit,step_count,swing),lane_expansion);retained=enabled==1?budget_mul(budget_occ(lane_unit*gate_ppm/PPM+margin,lane_unit,step_count,swing),lane_expansion):0;slider46=budget_add(slider46,future);slider48=budget_add(slider48,burst);slider49=budget_add(slider49,retained);repeat_ix+=1;);
+       );
+      );
+     );
+    ):tag==255?(
+     cur&&seen!=expected?(ok=0;slider53=7;);(rec_len!=0||pos+1!=pending_words)?(ok=0;slider53=7;);ended=1;
+   );
+   pos+=2+rec_len;
+  );
+ );
+ slider50=budget_add(slider48,slider49);ok=ok&&ended;
+ ok&&slider46>BUDGET_FUTURE?(ok=0;slider53=2;);ok&&slider47>BUDGET_BLOCK_CLOCKS?(ok=0;slider53=3;);ok&&slider48>BUDGET_BLOCK_ONS?(ok=0;slider53=4;);ok&&slider50>BUDGET_OFFS?(ok=0;slider53=5;);ok&&slider51>BUDGET_RECON?(ok=0;slider53=6;);
+ slider45=ok?1:-1;ok;
+);
+function try_promote_pair()local(i,rev,accepted)(pending_words>0&&map_pending_words>0&&runtime_promote_latched&&map_promote_latched&&pending_revision==map_pending_revision?(accepted=budget_pending();accepted?(rev=pending_revision;i=0;loop(pending_words,400000[i]=100000[i];i+=1;);i=0;loop(map_pending_words,980000[i]=950000[i];i+=1;);active_words=pending_words;map_active_words=map_pending_words;active_budget_future=slider46;active_budget_block_ons=slider48;active_budget_retained=slider49;active_budget_block_qn_micro=slider52;runtime_fault_latch=0;slider35=rev;slider36=0;pending_words=0;pending_revision=0;map_pending_words=0;map_pending_revision=0;runtime_promote_latched=0;map_promote_latched=0;build_scheduler();):(pending_words=0;pending_revision=0;map_pending_words=0;map_pending_revision=0;slider36=0;runtime_promote_latched=0;map_promote_latched=0;);););
+function map_qn(t)local(i,n,p,q0,t0,q1,t1,result,found)(n=980000[10];result=-HUGE;found=0;t==980000[8]?result=980000[6]:t==980000[9]?result=980000[7]:(i=0;loop(n-1,!found?(p=12+i*2;q0=980000[p];t0=980000[p+1];q1=980000[p+2];t1=980000[p+3];t>=t0&&t<=t1?(result=q0+(t-t0)*(q1-q0)/(t1-t0);found=1;););i+=1;););result;);
+function map_time(q)local(i,n,p,q0,t0,q1,t1,result,found)(n=980000[10];result=-HUGE;found=0;q==980000[6]?result=980000[8]:q==980000[7]?result=980000[9]:(i=0;loop(n-1,!found?(p=12+i*2;q0=980000[p];t0=980000[p+1];q1=980000[p+2];t1=980000[p+3];q>=q0&&q<=q1?(result=t0+(q-q0)*(t1-t0)/(q1-q0);found=1;););i+=1;););result;);
+function next_grid(q,unit,origin)local(x,b)(unit<=0?q:(x=(q-origin)/unit;b=origin+ceil(x-0.000000001)*unit;b<q-0.0000001?b+=unit;b;););
+function next_bar(q)local(n,p,i,mq,num,den,sq,nextq,b)(n=980000[11];p=12+980000[10]*2;mq=0;num=4;den=4;nextq=HUGE;i=0;loop(n,sq=980000[p+i*3];sq<=q+0.0000001?(mq=sq;num=980000[p+i*3+1];den=980000[p+i*3+2];):nextq==HUGE?nextq=sq;i+=1;);b=next_grid(q,num*4/den,mq);min(b,nextq););
+function variation_period(v)local(i,b,p,u)(p=0;i=0;loop(lane_count,b=i*LANE_WORDS;LANES[b+1]==v?(u=4*LANES[b+4]/LANES[b+5]*LANES[b+3];p=max(p,u););i+=1;);p>0?p:4;);
+function activate_variation(v)(runtime_variation=v;pending_variation=0;reset_schedule_history(1););
+function request_variation(v,q)local(base,code,unit,b)(
+  variation_request_q=q;
+  v>=1&&v<=var_count?(
+    v==runtime_variation?(pending_variation=0;):(
+      base=(v-1)*VAR_WORDS;code=VARS[base];variation_request_code=code;
+      code==0?(activate_variation(v);):(
+        code==1?unit=.25:code==2?unit=1:code==4?unit=variation_period(runtime_variation):code==5?unit=4*VARS[base+1]/VARS[base+2]:unit=0;
+        b=code==3?next_bar(q):next_grid(q,unit,0);variation_request_boundary=b;
+        b<=q+0.0000001?activate_variation(v):(pending_variation=v;pending_variation_q=b;);
+      );
+    );
+  );
+);
+// Sequencer work is staged transactionally.  Only safety note-offs may leave
+// the plug-in when preflight fails; caller-note ownership remains independent.
+function due_offs(q0,q1)local(d,seq,p,n,off,more,token)(more=1;while(more)(off_size>0&&OFFQ[0]<q1?(d=OFFQ[0];seq=OFFQ[1];p=OFFQ[2];n=OFFQ[3];off_pop();d>=q0?(token=seq+1;ACTIVESEQ[p]==token?(off=floor((map_time(d)-play_position)*srate+.5);off=max(0,min(samplesblock-1,off));midi_bus=floor(p/16);midisend(off,0x80|(p%16),n,0);ACTIVESEQ[p]=0;ACTIVENOTE[p]=ROOT_NOTE;););):(more=0;);););
+function stage_off_add(d,seq,p,n)local(o,put)(put=stage_off_count<STAGE_OFF_CAP;put?(o=stage_off_count*OFFQ_WORDS;STAGE_OFF[o]=d;STAGE_OFF[o+1]=seq;STAGE_OFF[o+2]=p;STAGE_OFF[o+3]=n;stage_off_count+=1;):(stage_fault=1;);put;);
+function stage_now_add(on,pad,note,vel,pan,gate)local(put)(put=stage_now_push_seq(on,stage_seq,pad,note,vel,pan,gate);put?stage_seq+=1;put;);
+function stage_future_add(on,pad,note,vel,pan,gate)local(o,put)(put=stage_future_count<STAGE_FUTURE_CAP;put?(o=stage_future_count*ONQ_WORDS;STAGE_FUTURE[o]=on;STAGE_FUTURE[o+1]=stage_seq;STAGE_FUTURE[o+2]=pad;STAGE_FUTURE[o+3]=note;STAGE_FUTURE[o+4]=vel;STAGE_FUTURE[o+5]=pan;STAGE_FUTURE[o+6]=gate;stage_future_count+=1;stage_seq+=1;):(stage_fault=1;);put;);
+// Mute/solo is an audio mask in the sampler. Dispatcher eligibility is based
+// only on a valid pad index so restored snapshots can never omit active lanes.
+function pad_enabled(pad)(pad>=0&&pad<128;);
+function stage_link_now(on,pad,note,vel,pan,gate)local(b,i,t)(pad_enabled(pad)?stage_now_add(on,pad,note,vel,pan,gate);b=pad*PAD_WORDS;i=0;loop(PADMAP[b+2],t=PADMAP[b+3+i];pad_enabled(t)?stage_now_add(on,t,note,vel,pan,gate);i+=1;););
+function stage_link_future(on,pad,note,vel,pan,gate)local(b,i,t)(pad_enabled(pad)?stage_future_add(on,pad,note,vel,pan,gate);b=pad*PAD_WORDS;i=0;loop(PADMAP[b+2],t=PADMAP[b+3+i];pad_enabled(t)?stage_future_add(on,t,note,vel,pan,gate);i+=1;););
+function stage_begin()local(i,b,s,n)(stage_off_count=0;stage_now_size=0;stage_future_count=0;stage_emit_count=0;stage_owned_count=0;stage_seq=queue_seq;stage_fault=lane_count>SHADOW_LANE_CAP;n=min(lane_count,SHADOW_LANE_CAP);i=0;loop(n,b=i*LANE_WORDS;s=i*SHADOW_LANE_WORDS;SHADOW_LANES[s]=LANES[b+9];SHADOW_LANES[s+1]=LANES[b+10];SHADOW_LANES[s+2]=-1;i+=1;););
+function stage_due(q0,q1)local(d,seq,p,n,on,vel,pan,gate,more,sample)(more=1;while(more&&!stage_fault)(off_size>0&&OFFQ[0]<q1?(d=OFFQ[0];seq=OFFQ[1];p=OFFQ[2];n=OFFQ[3];off_pop();d>=q0?stage_off_add(d,seq,p,n);):(more=0;););more=1;while(more&&!stage_fault)(on_size>0&&ONQ[0]<q1?(on=ONQ[0];sample=(map_time(on)-play_position)*srate;sample<samplesblock-.5?(seq=ONQ[1];p=ONQ[2];n=ONQ[3];vel=ONQ[4];pan=ONQ[5];gate=ONQ[6];on_pop();stage_now_push_seq(on,seq,p,n,vel,pan,gate);):(more=0;);):(more=0;););!stage_fault;);
+function step_pass_shadow(li,base,k)local(c,a,b,prior,j)(c=STEPS[base+10];a=STEPS[base+11];b=STEPS[base+12];prior=0;c==0?1:c==1?k==0:c==2?k!=0:c==3?(floor(k/LANES[li*LANE_WORDS+3])%a)==b:c==4?fill_state:c==5?!fill_state:c==6?(b==0?prior=SHADOW_LANES[li*SHADOW_LANE_WORDS]:(j=0;loop(lane_count,LANES[j*LANE_WORDS]==b&&LANES[j*LANE_WORDS+1]==LANES[li*LANE_WORDS+1]?prior=SHADOW_LANES[j*SHADOW_LANE_WORDS];j+=1;););a?prior:!prior;):0;);
+function group_pick(pad)local(slot,b,n,mode,x,d,pass,advance,i,candidate,found)(
+  group_output_pad=pad;group_output_pass=1;slot=PADGROUP[pad]|0;
+  slot>0?(
+    b=(slot-1)*GROUP_WORDS;n=GROUPS[b+7]|0;GROUPS[b+27]=(GROUPS[b+27]*MUL)%MOD;pass=GROUPS[b+2]>=PPM||(GROUPS[b+2]>0&&((GROUPS[b+27]-1)%PPM)<GROUPS[b+2]);advance=pass||GROUPS[b+5];
+    advance?(
+      mode=GROUPS[b+1]|0;
+      mode==0?(x=GROUPS[b+24]|0;GROUPS[b+24]=(x+1)%n;):
+      mode==1?(x=GROUPS[b+24]|0;n>1?(GROUPS[b+24]+=GROUPS[b+25];GROUPS[b+24]>=n?(GROUPS[b+24]=n-2;GROUPS[b+25]=-1;):GROUPS[b+24]<0?(GROUPS[b+24]=1;GROUPS[b+25]=1;););):
+      mode==2?(GROUPS[b+27]=(GROUPS[b+27]*MUL)%MOD;x=(GROUPS[b+27]-1)%n;):
+      (n==1?x=0:GROUPS[b+26]<0?(GROUPS[b+27]=(GROUPS[b+27]*MUL)%MOD;x=(GROUPS[b+27]-1)%n;):(GROUPS[b+27]=(GROUPS[b+27]*MUL)%MOD;d=(GROUPS[b+27]-1)%(n-1);x=d>=GROUPS[b+26]?d+1:d;);GROUPS[b+26]=x;);
+      pass?(group_output_pad=GROUPS[b+8+x];!pad_enabled(group_output_pad)?(found=0;i=0;loop(n,!found?(candidate=GROUPS[b+8+i];pad_enabled(candidate)?(group_output_pad=candidate;found=1;););i+=1;);!found?pass=0;););
+    );
+    group_output_pass=pass;
+  );
+);
+function live_pad_emit(off,pad,input_note,vel,transpose,cents,pan,slide,shift,glide,voice)local(choke_at,note_at,did,output_note,bend,base_pan,wanted_pan,pan_delta)(
+  output_note=max(0,min(127,ROOT_NOTE+transpose));
+  LEGATO[pad]=slide&&ACTIVESEQ[pad]!=0;
+  choke_at=off>0?off-1:off;did=pad_apply_choke(pad,choke_at);note_at=did&&off==0?min(samplesblock-1,1):off;
+  alloc(pad,input_note,voice);ACTIVESEQ[pad]=-(voice+1);ACTIVENOTE[pad]=output_note;
+  bend=max(0,min(16383,floor(8192+cents*4096/100+.5)));
+  base_pan=PADMAP[pad*PAD_WORDS+12];wanted_pan=pan==1001?base_pan:pan;pan_delta=max(-100,min(100,wanted_pan-base_pan));
+  midi_bus=floor(pad/16);midisend(note_at,0xE0|(pad%16),bend%128,floor(bend/128));glide>=0?midisend(note_at,0xB0|(pad%16),5,max(0,min(127,floor(glide*254+.5))));midisend(note_at,0xB0|(pad%16),10,max(1,min(127,floor(64+pan_delta*63/100+.5))));midisend(note_at,0xB0|(pad%16),68,LEGATO[pad]?127:0);midisend(note_at,0xB0|(pad%16),74,max(0,min(127,floor(shift*127+.5))));midisend(note_at,0x90|(pad%16),output_note,vel);pad_flash(pad);
+);
+function performance_emit(off,pad,input_note,vel,transpose,cents,pan,slide,shift,glide)local(chosen,b,i,t,voice)(
+  voice=(slider88%16777214)+1;group_pick(pad);chosen=group_output_pad;
+  group_output_pass&&pad_enabled(chosen)?(
+    live_pad_emit(off,chosen,input_note,vel,transpose,cents,pan,slide,shift,glide,voice);
+    b=chosen*PAD_WORDS;i=0;loop(PADMAP[b+2],t=PADMAP[b+3+i];pad_enabled(t)?live_pad_emit(off,t,input_note,vel,transpose,cents,pan,slide,shift,glide,voice);i+=1;);
+  );
+);
+function live_emit(off,pad,input_note,vel,transpose)(performance_emit(off,pad,input_note,vel,transpose,0,1001,0,0,-1););
+// Strictly equal clock-QN ticks read the pre-batch shadow history and commit
+// together.  Active history remains untouched throughout this reconstruction.
+function stage_schedule(q0,q1)local(li,b,s,k,sp,cq,minq,found,ix,base,ok,pr,r,on,pad,note,gate,horizon,more,chosen,gactive)(
+  horizon=q1+1;more=1;
+  while(more&&!stage_fault)(
+    found=0;minq=HUGE;li=0;
+    loop(lane_count,
+      b=li*LANE_WORDS;s=li*SHADOW_LANE_WORDS;
+      runtime_variation==LANES[b+1]?(
+        k=SHADOW_LANES[s+1];sp=4*LANES[b+4]/LANES[b+5];
+        gactive=LANE_GROOVE[li]&&GROOVES[(LANES[b+1]-1)*GROOVE_WORDS]>0;cq=k*sp+(gactive?groove_shift(LANES[b+1],k*sp,LANES[b+7]):(((k+LANES[b+6])%2)?sp*LANES[b+7]/200000:0));
+        cq<horizon&&cq<minq?(minq=cq;found=1;);
+      );
+      li+=1;
+    );
+    found?(
+      li=0;
+      loop(lane_count,
+        b=li*LANE_WORDS;s=li*SHADOW_LANE_WORDS;k=SHADOW_LANES[s+1];sp=4*LANES[b+4]/LANES[b+5];
+        gactive=LANE_GROOVE[li]&&GROOVES[(LANES[b+1]-1)*GROOVE_WORDS]>0;cq=k*sp+(gactive?groove_shift(LANES[b+1],k*sp,LANES[b+7]):(((k+LANES[b+6])%2)?sp*LANES[b+7]/200000:0));SHADOW_LANES[s+2]=-1;
+        runtime_variation==LANES[b+1]&&cq==minq?(
+          ix=(k+LANES[b+6])%LANES[b+3];base=(LANES[b+8]+ix)*STEP_WORDS;
+           ok=STEPS[base]==2?2:(STEPS[base]&&step_pass_shadow(li,base,k));
+           ok==1&&STEPS[base+7]<PPM?(
+            pr=(scheduler_rng+li*8191+k*131071)%MOD;pr=(pr*MUL)%MOD;
+            ok=(pr-1)%PPM<STEPS[base+7];
+          );
+          SHADOW_LANES[s+2]=ok;
+        );
+        li+=1;
+      );
+      li=0;
+      loop(lane_count,
+        b=li*LANE_WORDS;s=li*SHADOW_LANE_WORDS;
+        SHADOW_LANES[s+2]>=0?(
+          k=SHADOW_LANES[s+1];sp=4*LANES[b+4]/LANES[b+5];
+          ix=(k+LANES[b+6])%LANES[b+3];base=(LANES[b+8]+ix)*STEP_WORDS;
+           ok=SHADOW_LANES[s+2];SHADOW_LANES[s]=ok==1;SHADOW_LANES[s+1]=k+1;
+          ok?(
+             pad=LANES[b+2]-1;STEPS[base]==2?(chosen=pad;ok=1;):(group_pick(pad);chosen=group_output_pad;ok=group_output_pass;);r=0;
+             loop(STEPS[base]==2?1:STEPS[base+4],
+              !stage_fault&&ok?(
+                r>0&&PADGROUP[pad]>0&&GROUPS[(PADGROUP[pad]-1)*GROUP_WORDS+6]?(group_pick(pad);chosen=group_output_pad;ok=group_output_pass;);
+                on=minq+STEPS[base+8]/960+r*4*STEPS[base+5]/STEPS[base+6];
+                note=max(0,min(127,ROOT_NOTE+STEPS[base+2]))+(STEPS[base+13]+100)*128;gate=STEPS[base]==2?0:STEPS[base]==3?-1:sp*STEPS[base+9]/PPM;
+                sens=max(1,LANES[b+11]/10000);deficit=max(0,(127-STEPS[base+1])/127);shift=max(0,min(1,(sens-1)*pow(deficit,1.5)));
+                pan_value=STEPS[base+3];shift>0?(pan_value<0?pan_value=pan_value-shift/1000:pan_value=pan_value+shift/1000);STEPS[base+14]?(pan_value+=2000;);
+                STEPS[base]==2?(on>=q0&&on<q1&&((map_time(on)-play_position)*srate<samplesblock-.5)?stage_now_add(on,chosen,note,0,1001,0):on>=q0?stage_future_add(on,chosen,note,0,1001,0);):(on>=q0&&on<q1&&((map_time(on)-play_position)*srate<samplesblock-.5)?stage_link_now(on,chosen,note,STEPS[base+1],pan_value,gate):on>=q0?stage_link_future(on,chosen,note,STEPS[base+1],pan_value,gate););
+              );
+              r+=1;
+            );
+          );
+        );
+        li+=1;
+      );
+    ):(more=0;);
+  );
+  !stage_fault;
+);
+function stage_bounds()(on_size+stage_future_count<=ONQ_CAP&&off_size+stage_owned_count<=OFFQ_CAP;);
+function latch_stage_fault()(schedule_fault=3;slider54=3;runtime_fault_latch=max(runtime_fault_latch,3););
+function stage_block(q0,q1)local(ok,bounds_ok)(slider60+=1;stage_begin();ok=stage_due(q0,q1);ok?(ok=stage_schedule(q0,q1););slider61=stage_now_size;slider62=stage_future_count;slider63=stage_owned_count;ok?(bounds_ok=stage_bounds();!bounds_ok?(stage_fault=1;ok=0;););!ok?(latch_stage_fault(););slider64=ok?1:-1;ok;);
+function stage_flatten_now()local(o,e,j)(stage_emit_count=0;while(stage_now_size>0)(o=0;e=stage_emit_count*ONQ_WORDS;j=0;loop(ONQ_WORDS,STAGE_EMIT[e+j]=STAGE_NOW[o+j];j+=1;);stage_emit_count+=1;stage_now_pop();););
+function commit_staged(q0,q1)local(i,o,b,s,on,seq,pad,note,vel,pan,gate,off,cents,bend,d,token,newer,j,e,choke_at,note_at,did,slide,base_pan,wanted_pan,pan_delta)(
+  stage_flatten_now();
+  i=0;loop(stage_future_count,!stage_fault?(o=i*ONQ_WORDS;!on_push_seq(STAGE_FUTURE[o],STAGE_FUTURE[o+1],STAGE_FUTURE[o+2],STAGE_FUTURE[o+3],STAGE_FUTURE[o+4],STAGE_FUTURE[o+5],STAGE_FUTURE[o+6])?stage_fault=1;);i+=1;);
+  i=0;loop(stage_emit_count,!stage_fault?(o=i*ONQ_WORDS;gate=STAGE_EMIT[o+6];gate>0?(!off_push_seq(STAGE_EMIT[o]+gate,STAGE_EMIT[o+1],STAGE_EMIT[o+2],STAGE_EMIT[o+3]%128)?stage_fault=1;););i+=1;);
+  !stage_fault?(
+    queue_seq=stage_seq;i=0;loop(lane_count,b=i*LANE_WORDS;s=i*SHADOW_LANE_WORDS;LANES[b+9]=SHADOW_LANES[s];LANES[b+10]=SHADOW_LANES[s+1];i+=1;);
+    memset(LEGATO,0,128);
+    i=0;loop(stage_off_count,o=i*OFFQ_WORDS;d=STAGE_OFF[o];seq=STAGE_OFF[o+1];pad=STAGE_OFF[o+2];token=seq+1;newer=0;j=0;loop(stage_emit_count,e=j*ONQ_WORDS;STAGE_EMIT[e+2]==pad&&STAGE_EMIT[e+5]>=1900&&abs(STAGE_EMIT[e]-d)<=0.0000001?newer=1;j+=1;);newer?(LEGATO[pad]=1;);ACTIVESEQ[pad]==token&&!newer?(off=floor((map_time(d)-play_position)*srate+.5);off=max(0,min(samplesblock-1,off));midi_bus=floor(pad/16);midisend(off,0x80|(pad%16),STAGE_OFF[o+3],0);ACTIVESEQ[pad]=0;ACTIVENOTE[pad]=ROOT_NOTE;);i+=1;);
+    i=0;loop(stage_emit_count,o=i*ONQ_WORDS;on=STAGE_EMIT[o];seq=STAGE_EMIT[o+1];pad=STAGE_EMIT[o+2];note=STAGE_EMIT[o+3];vel=STAGE_EMIT[o+4];off=floor((map_time(on)-play_position)*srate+.5);off=max(0,min(samplesblock-1,off));vel<=0?(pad_choke(pad,off);):(cents=floor(note/128)-100;note=note%128;bend=max(0,min(16383,floor(8192+cents*4096/100+.5)));pan=STAGE_EMIT[o+5];slide=pan>=1900;slide?(pan-=2000;);shift=0;pan>=1001?(shift=max(0,min(1,pan-1001));pan=1001;):(pan_base=floor(pan);shift=max(0,min(1,(pan-pan_base)*1000));pan=pan_base;);gate=STAGE_EMIT[o+6];LEGATO[pad]=slide&&ACTIVESEQ[pad]!=0;choke_at=off>0?off-1:off;did=pad_apply_choke(pad,choke_at);note_at=did&&off==0?min(samplesblock-1,1):off;base_pan=PADMAP[pad*PAD_WORDS+12];wanted_pan=pan==1001?base_pan:pan;pan_delta=max(-100,min(100,wanted_pan-base_pan));ACTIVESEQ[pad]=seq+1;ACTIVENOTE[pad]=note;midi_bus=floor(pad/16);midisend(note_at,$xE0|(pad%16),bend%128,floor(bend/128));midisend(note_at,$xB0|(pad%16),10,max(1,min(127,floor(64+pan_delta*63/100+.5))));midisend(note_at,$xB0|(pad%16),68,LEGATO[pad]?127:0);midisend(note_at,$xB0|(pad%16),74,max(0,min(127,floor(shift*127+.5))));midisend(note_at,$x90|(pad%16),note,vel);pad_flash(pad);gate==0?(midisend(note_at,$x80|(pad%16),note,0);ACTIVESEQ[pad]=0;ACTIVENOTE[pad]=ROOT_NOTE;););i+=1;);
+    due_offs(q0,q1);
+  );
+  stage_fault?(latch_stage_fault(););!stage_fault;
+);
+function run_stage(q0,q1)local(ok)(ok=stage_block(q0,q1);ok?ok=commit_staged(q0,q1);ok;);
+function flush_staged_owned()local(i,o,p,n)(i=0;loop(stage_off_count,o=i*OFFQ_WORDS;p=STAGE_OFF[o+2];n=STAGE_OFF[o+3];midi_bus=floor(p/16);midisend(0,0x80|(p%16),n,0);i+=1;););
+// Persistence schema v1 stores only immutable, admitted active images.  Live
+// queues, ownership, history, pending publications, and scratch are rebuilt.
+function ser_int(v,lo,hi)(v==floor(v)&&v>=lo&&v<=hi;);
+// REAPER stores JSFX @serialize numbers as float32. Encode every value as
+// sign/high-word, low-word, and six-decimal fraction so checksums, hashed IDs,
+// and transport anchors survive a project round trip without precision loss.
+function ser_write_value(v)local(a,whole,frac,hi,lo,sh)(a=abs(v);whole=floor(a);frac=floor((a-whole)*1000000+.5);frac>=1000000?(whole+=1;frac-=1000000;);hi=floor(whole/65536);lo=whole-hi*65536;sh=v<0?-(hi+1):hi;file_var(0,sh);file_var(0,lo);file_var(0,frac););
+function ser_read_value()local(sh,lo,frac,hi,sign,v)(sh=0;lo=0;frac=0;file_var(0,sh);file_var(0,lo);file_var(0,frac);sign=sh<0?-1:1;hi=sh<0?-sh-1:sh;v=sign*(hi*65536+lo+frac/1000000);v;);
+function ser_meta_checksum()local(c)(c=1;c=(c*MUL+modword(ser_magic))%MOD;c=(c*MUL+modword(ser_version))%MOD;c=(c*MUL+modword(ser_state))%MOD;c=(c*MUL+modword(ser_revision))%MOD;c=(c*MUL+modword(ser_runtime_words))%MOD;c=(c*MUL+modword(ser_map_words))%MOD;c=(c*MUL+modword(ser_budget_future))%MOD;c=(c*MUL+modword(ser_budget_block_ons))%MOD;c=(c*MUL+modword(ser_budget_retained))%MOD;c=(c*MUL+modword(ser_budget_qn_micro))%MOD;c;);
+function ser_runtime_valid(base,n,rev)local(ok,c,i,pos,tag,len,done)(
+  ok=ser_int(n,18,SER_RUNTIME_CAP)&&ser_int(rev,0,16777215)&&base[0]==52444&&base[1]==2&&base[2]==1&&base[3]==n&&base[5]==rev;
+  ok?(c=1;i=5;loop(n-5,c=(c*MUL+modword(base[i]))%MOD;i+=1;);ok=c==base[4];);
+  ok?(pos=16;done=0;while(ok&&!done&&pos<n)(pos+1>=n?(ok=0;):(tag=base[pos];len=base[pos+1];(!ser_int(len,0,SER_RUNTIME_CAP)||pos+2+len>n)?(ok=0;):tag==255?(ok=len==0&&pos+2==n;done=1;):(pos+=2+len;);););ok=ok&&done;);
+  ok;
+);
+function ser_map_valid(base,n,rev)local(ok,c,i,anchors,sigs,expected,p,q,t,pq,pt,num,den)(
+  ok=ser_int(n,16,SER_MAP_CAP)&&ser_int(rev,0,16777215)&&base[0]==52445&&base[1]==1&&base[2]==n&&base[4]==rev&&base[5]==srate;
+  ok?(c=1;i=4;loop(n-4,c=(c*MUL+mapword(base[i]))%MOD;i+=1;);ok=c==base[3];);
+  ok?(anchors=base[10];sigs=base[11];ok=ser_int(anchors,2,8192)&&ser_int(sigs,0,256);expected=12+anchors*2+sigs*3;ok=ok&&expected==n&&base[6]==base[6]&&base[7]==base[7]&&base[8]==base[8]&&base[9]==base[9]&&base[7]>base[6]&&base[9]>base[8];);
+  ok?(p=12;pq=-HUGE;pt=-HUGE;i=0;loop(anchors,q=base[p];t=base[p+1];(!(q==q)||!(t==t)||q<=pq||t<=pt)?ok=0:(pq=q;pt=t;);p+=2;i+=1;);ok=ok&&base[12]==base[6]&&base[13]==base[8]&&base[12+(anchors-1)*2]==base[7]&&base[13+(anchors-1)*2]==base[9];);
+  ok?(pq=-HUGE;i=0;loop(sigs,q=base[p];num=base[p+1];den=base[p+2];(!(q==q)||q<base[6]||q>base[7]||q<=pq||!ser_int(num,1,2147483647)||!ser_int(den,1,2147483647))?(ok=0;):(pq=q;);p+=3;i+=1;););
+  ok;
+);
+function ser_clear_active()(
+  active_words=0;map_active_words=0;lane_count=0;slider35=0;slider36=0;active_budget_future=0;active_budget_block_ons=0;active_budget_retained=0;active_budget_block_qn_micro=0;
+  pending_words=0;pending_revision=0;map_pending_words=0;map_pending_revision=0;runtime_promote_latched=0;map_promote_latched=0;
+  off_size=0;on_size=0;off_peak=0;on_peak=0;queue_seq=0;schedule_fault=0;runtime_fault_latch=0;memset(0,0,4096);memset(ACTIVESEQ,0,128);memset(ACTIVENOTE,ROOT_NOTE,128);
+);
+function ser_activate()local(ok,i,bf,bbo,br,bqn)(
+  i=0;loop(ser_runtime_words,100000[i]=SER_RUNTIME[i];i+=1;);i=0;loop(ser_map_words,950000[i]=SER_MAP[i];i+=1;);
+  pending_words=ser_runtime_words;pending_revision=ser_revision;map_pending_words=ser_map_words;map_pending_revision=ser_revision;
+  ok=budget_pending();bf=slider46;bbo=slider48;br=slider49;bqn=slider52;
+  ok=ok&&bf==ser_budget_future&&bbo==ser_budget_block_ons&&br==ser_budget_retained&&bqn==ser_budget_qn_micro;
+  ok?(
+    i=0;loop(ser_runtime_words,400000[i]=SER_RUNTIME[i];i+=1;);i=0;loop(ser_map_words,980000[i]=SER_MAP[i];i+=1;);
+    active_words=ser_runtime_words;map_active_words=ser_map_words;active_budget_future=bf;active_budget_block_ons=bbo;active_budget_retained=br;active_budget_block_qn_micro=bqn;slider35=ser_revision;
+    pending_words=0;pending_revision=0;map_pending_words=0;map_pending_revision=0;slider36=0;runtime_promote_latched=0;map_promote_latched=0;
+    off_size=0;on_size=0;off_peak=0;on_peak=0;queue_seq=0;schedule_fault=0;runtime_fault_latch=0;memset(0,0,4096);memset(ACTIVESEQ,0,128);memset(ACTIVENOTE,ROOT_NOTE,128);build_scheduler();
+  ):(ser_clear_active();slider45=-1;slider53=7;);
+  ok;
+);
+@slider
+slider28!=last_reset?(last_reset=slider28;reset_state(1);reset_schedule_history(1);runtime_fault_latch=0;slider54=0;slider59=0;);
+@serialize
+serialize_reading=file_avail(0)>=0;
+serialize_reading?(
+  slider69=1;
+  ser_magic=ser_read_value();ser_version=ser_read_value();ser_state=ser_read_value();ser_revision=ser_read_value();ser_runtime_words=ser_read_value();ser_map_words=ser_read_value();ser_budget_future=ser_read_value();ser_budget_block_ons=ser_read_value();ser_budget_retained=ser_read_value();ser_budget_qn_micro=ser_read_value();ser_checksum=ser_read_value();
+  ser_ok=ser_magic==SER_MAGIC&&ser_version==SER_VERSION&&ser_int(ser_state,0,1)&&ser_int(ser_revision,0,16777215)&&ser_int(ser_runtime_words,0,SER_RUNTIME_CAP)&&ser_int(ser_map_words,0,SER_MAP_CAP)&&ser_int(ser_budget_future,0,BUDGET_FUTURE)&&ser_int(ser_budget_block_ons,0,BUDGET_BLOCK_ONS)&&ser_int(ser_budget_retained,0,BUDGET_OFFS)&&ser_int(ser_budget_qn_micro,0,1000000)&&ser_checksum==ser_meta_checksum();
+  ser_ok?(slider69=2;);
+  ser_ok&&ser_state?(ser_ok=ser_runtime_words>=18&&ser_map_words>=16;ser_ok?(i=0;loop(ser_runtime_words,SER_RUNTIME[i]=ser_read_value();i+=1;);i=0;loop(ser_map_words,SER_MAP[i]=ser_read_value();i+=1;););):ser_ok?(ser_ok=ser_revision==0&&ser_runtime_words==0&&ser_map_words==0&&ser_budget_future==0&&ser_budget_block_ons==0&&ser_budget_retained==0&&ser_budget_qn_micro==0;);
+  ser_trailer=ser_read_value();ser_ok=ser_ok&&ser_trailer==SER_TRAILER&&file_avail(0)==0;
+  ser_ok?(slider69=3;);
+  ser_ok&&ser_state?(ser_ok=ser_runtime_valid(SER_RUNTIME,ser_runtime_words,ser_revision)&&ser_map_valid(SER_MAP,ser_map_words,ser_revision);ser_ok?(slider69=4;ser_ok=ser_activate();ser_ok?(slider69=5;););):ser_ok?(ser_clear_active();slider69=5;);
+  !ser_ok?(ser_clear_active();slider45=-1;slider53=7;);
+):(
+  ser_state=active_words>0&&map_active_words>0&&ser_int(active_budget_future,0,BUDGET_FUTURE)&&ser_int(active_budget_block_ons,0,BUDGET_BLOCK_ONS)&&ser_int(active_budget_retained,0,BUDGET_OFFS)&&ser_int(active_budget_block_qn_micro,0,1000000)&&ser_runtime_valid(400000,active_words,slider35)&&ser_map_valid(980000,map_active_words,slider35);
+  ser_magic=SER_MAGIC;ser_version=SER_VERSION;ser_revision=ser_state?slider35:0;ser_runtime_words=ser_state?active_words:0;ser_map_words=ser_state?map_active_words:0;ser_budget_future=ser_state?active_budget_future:0;ser_budget_block_ons=ser_state?active_budget_block_ons:0;ser_budget_retained=ser_state?active_budget_retained:0;ser_budget_qn_micro=ser_state?active_budget_block_qn_micro:0;ser_checksum=ser_meta_checksum();ser_trailer=SER_TRAILER;
+  ser_write_value(ser_magic);ser_write_value(ser_version);ser_write_value(ser_state);ser_write_value(ser_revision);ser_write_value(ser_runtime_words);ser_write_value(ser_map_words);ser_write_value(ser_budget_future);ser_write_value(ser_budget_block_ons);ser_write_value(ser_budget_retained);ser_write_value(ser_budget_qn_micro);ser_write_value(ser_checksum);
+  ser_state?(i=0;loop(ser_runtime_words,ser_write_value(400000[i]);i+=1;);i=0;loop(ser_map_words,ser_write_value(980000[i]);i+=1;););ser_write_value(ser_trailer);
+);
+@block
+slider68=srate;
+slider34!=last_commit?(last_commit=slider34;load_pending(););slider43!=last_map_commit?(last_map_commit=slider43;load_map(););
+slider37!=last_promote?(last_promote=slider37;runtime_promote_latched=1;);slider44!=last_map_promote?(last_map_promote=slider44;map_promote_latched=1;);samplesblock<=MAX_BLOCK_SAMPLES?try_promote_pair();
+valid=slider1==52443&&slider2==1&&slider3==1&&slider11>=1;transport_playing=play_state&1;transport_start=transport_playing&&!was_playing;
+// REAPER may legitimately skip processing a silent track for many audio
+// blocks. Treating that sparse wake-up as a seek erased queued steps. Only a
+// backward move or a genuinely large forward jump is a discontinuity.
+// A forward jump can be a normal sparse-track wake-up. Catching up from the
+// retained lane clocks is deterministic; clearing them drops the next step.
+// A backward jump is the explicit seek/loop-wrap signal.
+disc=transport_playing&&was_playing&&play_position+0.0001<last_play;
+(!transport_playing&&was_playing)||disc?(stop_all_pads();reset_state(1);reset_input_performance();reset_schedule_history(1);arrangement_gate=0;arrangement_gate_count=0;);transport_start&&slider7==2?(reset_state(1);reset_schedule_history(1););was_playing=transport_playing;last_play=play_position;
+slider71!=last_variation_request?(last_variation_request=slider71;next_variation=slider70|0;next_variation>=1&&next_variation<=var_count?(transport_playing&&map_active_words>0?request_variation(next_variation,map_qn(play_position)):activate_variation(next_variation);););
+slider86!=last_audition_release?(last_audition_release=slider86;release_all(AUDITION_KEY,0););
+// The GUI may submit several hits inside one audio block. Each committed token
+// owns a ring slot, so polling never collapses rapid hits into the newest one.
+last_audition_request<0?(last_audition_request=slider85|0;):slider85!=last_audition_request?(
+  audition_current=slider85|0;audition_count=audition_current-last_audition_request;audition_count<=0?audition_count+=16777214;audition_count=min(16,audition_count);
+  audition_seq=audition_current-audition_count+1;while(audition_seq<=0)(audition_seq+=16777214;);
+  loop(audition_count,
+    audition_payload=audition_slot((audition_seq-1)%16);audition_stored_seq=floor(audition_payload/4194304);audition_data=audition_payload-audition_stored_seq*4194304;audition_pitch=floor(audition_data/16384)-12;audition_data-=floor(audition_data/16384)*16384;
+    audition_stored_seq==audition_seq?(audition_pad=floor(audition_data/128);audition_vel=audition_data%128;audition_pad>=0&&audition_pad<128?live_emit(0,audition_pad,AUDITION_KEY,max(1,min(127,audition_vel)),audition_pitch););
+    audition_seq+=1;audition_seq>16777214?audition_seq=1;
+  );
+  last_audition_request=audition_current;
+);
+gate_before=arrangement_gate;
+while(midirecv(off,m1,m2,m3))(
+  st=m1&240;control=(m1&15)==15;
+  control&&st==192?(next_variation=(m2|0)+1;next_variation>=1&&next_variation<=var_count?(transport_playing&&map_active_words>0?request_variation(next_variation,map_qn(play_position+off/srate)):activate_variation(next_variation););):
+  control&&m2==127&&(st==144||st==128)?(
+    st==144&&m3>0?(arrangement_gate_count+=1;):(arrangement_gate_count=max(0,arrangement_gate_count-1););
+    arrangement_gate=arrangement_gate_count>0;
+  ):
+  slider66>=0.5?(
+    ch=m1&15;input_key=ch*128+(m2|0);live_pad=(m2-LIVE_BASE+128)%128;
+    st==224?(INPUT_BEND[ch]=(m2|0)+((m3|0)<<7)):
+    st==176&&m2==5?(INPUT_GLIDE[ch]=m3*.5/127):
+    st==176&&m2==10?(INPUT_PAN[ch]=(m3*200/127)-100):
+    st==176&&m2==68?(INPUT_SLIDE[ch]=m3>0):
+    st==176&&m2==74?(INPUT_SHIFT[ch]=max(0,min(1,m3/127))):
+    st==144&&m3>0&&live_pad>=0?(input_total=(INPUT_BEND[ch]-8192)*24/8192;input_transpose=floor(input_total+(input_total>=0?.5:-.5));input_cents=(input_total-input_transpose)*100;performance_emit(off,live_pad,input_key,m3|0,input_transpose,input_cents,INPUT_PAN[ch],INPUT_SLIDE[ch],INPUT_SHIFT[ch],INPUT_GLIDE[ch])):
+    (st==128||(st==144&&m3==0))&&live_pad>=0?release_oldest(input_key,off):
+    midisend(off,m1,m2,m3);
+  ):(
+    valid&&st==144&&m3>0?(pass=slider6>=PPM||(slider6>0&&((rnd()-1)%PPM)<slider6);pass?(idx=choose();pad=member_at(idx)-1;pad>=0?(voice=(slider88%16777214)+1;alloc(pad,m2,voice);ACTIVESEQ[pad]=-(voice+1);ACTIVENOTE[pad]=m2;midi_bus=floor(pad/16);midisend(off,0x90|(pad%16),m2,m3);pad_flash(pad););):slider9?choose();):valid&&(st==128||(st==144&&m3==0))?release_oldest(m2,off):midisend(off,m1,m2,m3);
+  );
+);
+arrangement_gate!=gate_before&&slider67>=1.5?(reset_state(1);reset_schedule_history(1););
+playing=transport_playing&&(slider67>=.5&&slider67<1.5||(slider67>=1.5&&arrangement_gate));
+// Phase 0's corrected transport domain is absolute-QN -> serialized project
+// time -> play_position/sample offset.  v2 has not yet carried that immutable
+// time-map table, so scheduling is deliberately disabled when the table is
+// absent; raw beat_position is never used as an absolute-QN clock.
+// The published project-time map supplies the immutable block QN bounds used by
+// the transactional sequencer preflight below.
+transport_schedule_valid=map_active_words>0&&980000[4]==slider35&&980000[5]==srate&&play_position>=980000[8]&&play_position+samplesblock/srate<=980000[9];
+block_guard=samplesblock>MAX_BLOCK_SAMPLES?1:0;
+playing&&transport_schedule_valid&&!block_guard?(q0=map_qn(play_position);q1=map_qn(play_position+samplesblock/srate);qspan=q1-q0;qspan<0||qspan>active_budget_block_qn_micro/PPM?block_guard=2:on_size>active_budget_future||off_size>active_budget_retained?block_guard=3;);
+block_guard?(slider54=block_guard;runtime_fault_latch=max(runtime_fault_latch,block_guard););
+playing&&transport_schedule_valid&&!block_guard&&!schedule_fault?(
+  slider54=0;fill_state=slider65>=0.5;
+  // A loop wrap can place the first block fractionally beyond the loop-start
+  // tick. History and queues were reset above, so safely reconstruct one full
+  // block behind q0 and clamp the recovered event to sample zero. A fresh
+  // transport start keeps the tighter two-sample tolerance to avoid replaying
+  // an event when the user deliberately starts just after it.
+  schedule_q0=q0;disc?schedule_q0=q0-(q1-q0):transport_start?schedule_q0=q0-(q1-q0)*2/max(1,samplesblock);
+  pending_variation&&pending_variation_q<=q0+0.0000001?(activate_variation(pending_variation););
+  pending_variation&&pending_variation_q>q0+0.0000001&&pending_variation_q<q1-0.0000001?(
+    switch_q=pending_variation_q;switch_target=pending_variation;stage_ok=run_stage(q0,switch_q);stage_ok?(activate_variation(switch_target);stage_ok=run_stage(switch_q,q1););
+  ):(stage_ok=run_stage(schedule_q0,q1););
+  !stage_ok?(schedule_fault=3;slider54=3;runtime_fault_latch=max(runtime_fault_latch,3);flush_staged_owned();stop_all_pads();reset_state(1);reset_schedule_history(1););
+):active_words&&block_guard?(reset_state(1);reset_schedule_history(1););
+slider55=on_size;slider56=on_peak;slider57=off_size;slider58=off_peak;slider59=runtime_fault_latch;
+ slider72=runtime_variation;slider73=pending_variation;slider74=pending_variation?pending_variation_q:0;slider75=var_count;slider76=variation_request_code;slider77=variation_request_q;slider78=variation_request_boundary;slider79=last_variation_request;slider80=transport_playing;slider81=map_active_words;

@@ -1,0 +1,54 @@
+desc:ReaDrum Gain LFO
+// Tempo-synchronized kit-bus gain modulation. This processor never writes to
+// the REAPER track fader and is transparent while disabled or Amount is zero.
+
+slider1:0<0,1,1{Off,On}>Enabled
+slider2:0<-100,100,1>1/2 amount
+slider3:0<-100,100,1>1/4 amount
+slider4:0<-100,100,1>1/6 amount
+slider5:0<-100,100,1>1/8 amount
+slider6:100<0,200,1>Amount
+slider7:1<0,2,1{1/2x,1x,2x}>Rate
+
+in_pin:left input
+in_pin:right input
+out_pin:left output
+out_pin:right output
+
+@init
+gain=1;
+sample_index=0;
+smooth_coeff=1-exp(-1/(0.002*srate));
+
+@slider
+half_amount=slider2/100;
+quarter_amount=slider3/100;
+sixth_amount=slider4/100;
+eighth_amount=slider5/100;
+// Half of the original modulation range. At 200% this reaches 50% depth;
+// at 100% it reaches 25% depth.
+depth=slider6/400;
+rate=slider7==0 ? 0.5 : slider7==2 ? 2 : 1;
+
+@block
+block_beat=beat_position;
+sample_index=0;
+bar_qn=max(0.25,ts_num*4/max(1,ts_denom));
+
+@sample
+playing=(play_state&1)||(play_state&4);
+slider1<0.5||!playing||depth<=0 ? target_gain=1 : (
+  qn=block_beat+sample_index*tempo/(60*srate);
+  phase=qn/bar_qn*rate;
+  raw=half_amount*sin(2*$pi*phase*2)
+      +quarter_amount*sin(2*$pi*phase*4)
+      +sixth_amount*sin(2*$pi*phase*6)
+      +eighth_amount*sin(2*$pi*phase*8);
+  shape=max(-1,min(1,raw));
+  modulation=max(-1,min(1,shape*depth));
+  target_gain=modulation>=0 ? 10^(12*modulation/20) : 1+modulation;
+);
+gain+=(target_gain-gain)*smooth_coeff;
+spl0*=gain;
+spl1*=gain;
+sample_index+=1;
