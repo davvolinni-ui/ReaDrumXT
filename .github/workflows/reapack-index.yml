@@ -26,8 +26,16 @@ jobs:
 
       - name: Validate and update index
         run: |
-          reapack-index --scan .
-          reapack-index --check .
+          if ! output=$(reapack-index --scan . 2>&1); then
+            echo "::error title=ReaPack scan failed::$output"
+            exit 1
+          fi
+          echo "$output"
+          if ! output=$(reapack-index --check . 2>&1); then
+            echo "::error title=ReaPack validation failed::$output"
+            exit 1
+          fi
+          echo "$output"
 
       - name: Commit updated index
         run: |
