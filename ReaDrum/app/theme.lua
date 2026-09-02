@@ -1,4 +1,3 @@
--- @noindex
 local M={}
 M.SECTION="ReaDrum5k.Theme"
 M.KEYS={"window_bg","panel_bg","text","selected_text","folder_text","accent","header_icon","value_marker","border","midi_note","preview_bg","step_dark","step_light","preview_grid"}

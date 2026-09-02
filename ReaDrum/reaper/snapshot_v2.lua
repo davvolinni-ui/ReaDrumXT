@@ -1,4 +1,3 @@
--- @noindex
 -- Phase 3B protocol v2 immutable payload. Phase 3A sliders are deliberately
 -- not used here: Lua writes a complete gmem page, then publishes its commit.
 local M={MAGIC=52444,VERSION=2,SCHEMA=1,MAX_WORDS=262144,MAX_PATTERNS=8,MAX_VARIATIONS=64,MAX_LANES=128,MAX_STEPS=14000,MAX_GROOVE_STEPS=256,MAX_PADS=128,MAX_LINKS=4,MAX_GROUPS=32,MAX_GROUP_MEMBERS=16,MAX_LOCKS=4096}

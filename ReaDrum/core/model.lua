@@ -1,4 +1,3 @@
--- @noindex
 -- Pure, serializable ReaDrum domain model. This module intentionally has no
 -- dependency on REAPER or on third-party Lua libraries.
 

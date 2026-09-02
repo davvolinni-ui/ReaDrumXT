@@ -1,4 +1,3 @@
--- @noindex
 local M = {}
 
 M.SCHEMA_VERSION = "1"

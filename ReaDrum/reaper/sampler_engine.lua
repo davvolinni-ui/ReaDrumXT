@@ -1,5 +1,5 @@
--- @noindex
 local allocator = require("ReaDrum.core.engine_allocator")
+local envelope = require("ReaDrum.core.envelope")
 local bank = require("ReaDrum.reaper.sampler_bank")
 
 local M = {}
@@ -34,14 +34,14 @@ function M.controls_from_pad(pad, output_pair, sample_slot, audible)
     tune_cents = cents or 0,
     -- UI values are normalized, but the engine receives real sampler times.
     -- These ranges keep drum envelopes useful while remaining sample-rate independent.
-    attack_seconds = envelope_enabled and math.max(0, (tonumber(controls.attack) or 0) * 0.5) or 0,
-    decay_seconds = envelope_enabled and math.max(0, (tonumber(controls.decay) or 0.02) * 12.5) or 0,
+    attack_seconds = envelope_enabled and envelope.time_seconds(controls.attack or 0, envelope.ATTACK_MAX_SECONDS) or 0,
+    decay_seconds = envelope_enabled and envelope.time_seconds(controls.decay or envelope.DEFAULT_DECAY_CONTROL, envelope.DECAY_MAX_SECONDS) or 0,
     sustain_gain = envelope_enabled and math.max(0, math.min(1, tonumber(controls.sustain) or 1)) or 1,
     -- ADSR release owns note-off only while the advanced envelope is enabled.
     -- Otherwise Gate mode uses its dedicated short release/de-click time.
     release_seconds = envelope_enabled
-      and math.max(0, (tonumber(controls.release) or 0) * 1.0)
-      or math.max(0, math.min(2, (tonumber(controls.gate_release_ms) or 10) / 1000)),
+      and envelope.time_seconds(controls.release or 0, envelope.RELEASE_MAX_SECONDS)
+      or math.max(0, math.min(envelope.GATE_RELEASE_MAX_SECONDS, (tonumber(controls.gate_release_ms) or 10) / 1000)),
     sample_start = tonumber(controls.sample_start) or 0,
     sample_end = tonumber(controls.sample_end) or 1,
     polyphony = pad.polyphony or 16,
@@ -50,10 +50,10 @@ function M.controls_from_pad(pad, output_pair, sample_slot, audible)
     obey_note_offs = gate_mode,
     output_pair = output_pair,
     minimum_velocity_gain = tonumber(controls.minimum_velocity_gain) or 0,
-    -- Existing normalized control storage now maps to a fixed 0..100 ms
-    -- boundary fade instead of a percentage of the sample's duration.
-    fade_in = math.max(0, math.min(0.1, (tonumber(controls.fade_in) or 0) * 0.1)),
-    fade_out = math.max(0, math.min(0.1, (tonumber(controls.fade_out) or 0) * 0.1)),
+    -- Power-scaled controls devote most travel to short drum-safe boundary
+    -- fades while preserving true zero and a 100 ms maximum.
+    fade_in = envelope.time_seconds(controls.fade_in or 0, envelope.FADE_MAX_SECONDS),
+    fade_out = envelope.time_seconds(controls.fade_out or 0, envelope.FADE_MAX_SECONDS),
     fade_in_curve = math.max(0, math.min(1, tonumber(controls.fade_in_curve) or .5)),
     fade_out_curve = math.max(0, math.min(1, tonumber(controls.fade_out_curve) or .5)),
     sample_slot = math.max(0,math.min(15,math.floor(tonumber(sample_slot) or (((tonumber(pad.logical_index) or 1)-1)%16)))),
@@ -80,6 +80,18 @@ function M.find_bank(host, track, bank_index)
   end
 end
 
+local function remove_sampler_banks(host,track,keep_bank_index)
+  if not host.TrackFX_Delete then return 0 end
+  local removed=0
+  for fx=host.TrackFX_GetCount(track)-1,0,-1 do
+    local ok,renamed=host.TrackFX_GetNamedConfigParm(track,fx,"renamed_name")
+    local bank_index=ok and type(renamed)=="string" and renamed:match("^ReaDrum Sampler Bank ([A-H])$")
+    bank_index=bank_index and (bank_index:byte()-string.byte("A")) or nil
+    if bank_index and bank_index~=keep_bank_index then host.TrackFX_Delete(track,fx);removed=removed+1 end
+  end
+  return removed
+end
+
 function M.ensure_bank(host, track, bank_index, namespace, hide_editor)
   local fx=M.find_bank(host, track, bank_index)
   if fx==nil then return bank.add(host, track, bank_index, namespace) end
@@ -89,12 +101,15 @@ function M.ensure_bank(host, track, bank_index, namespace, hide_editor)
   end
   -- Repair banks created before engine namespaces existed, and keep restored
   -- projects attached to their own command/control mailbox.
+  local wanted_namespace=(namespace or 0)%(bank.MAX_NAMESPACE+1)
   if host.TrackFX_SetParam then
-    host.TrackFX_SetParam(track,fx,0,bank_index)
-    host.TrackFX_SetParam(track,fx,4,(namespace or 0)%(bank.MAX_NAMESPACE+1))
+    local current_bank=host.TrackFX_GetParam and host.TrackFX_GetParam(track,fx,0)
+    local current_namespace=host.TrackFX_GetParam and host.TrackFX_GetParam(track,fx,4)
+    if current_bank==nil or math.abs(current_bank-bank_index)>.001 then host.TrackFX_SetParam(track,fx,0,bank_index) end
+    if current_namespace==nil or math.abs(current_namespace-wanted_namespace)>.001 then host.TrackFX_SetParam(track,fx,4,wanted_namespace) end
   else
     host.TrackFX_SetParamNormalized(track,fx,0,bank_index/7)
-    host.TrackFX_SetParamNormalized(track,fx,4,((namespace or 0)%(bank.MAX_NAMESPACE+1))/bank.MAX_NAMESPACE)
+    host.TrackFX_SetParamNormalized(track,fx,4,wanted_namespace/bank.MAX_NAMESPACE)
   end
   if hide_editor and host.TrackFX_Show then host.TrackFX_Show(track,fx,2) end
   return fx
@@ -123,7 +138,7 @@ function M.ensure_dispatcher(host, track)
 end
 
 function M.ensure_send_fx(host,track)
-  host.SetMediaTrackInfo_Value(track,"I_NCHAN",36)
+  host.SetMediaTrackInfo_Value(track,"I_NCHAN",96)
   local count=host.TrackFX_GetCount(track)
   for fx=0,count-1 do
     local ok,name=host.TrackFX_GetFXName(track,fx,"")
@@ -151,10 +166,14 @@ function M.remove_send_fx(host,track)
   return removed
 end
 
-function M.reconcile(host, track, rack, previous)
+function M.reconcile(host, track, rack, previous, bank_tracks)
   previous = previous or {}
-  host.SetMediaTrackInfo_Value(track, "I_NCHAN", 36)
+  host.SetMediaTrackInfo_Value(track, "I_NCHAN", 96)
   M.ensure_dispatcher(host, track)
+  if bank_tracks then
+    remove_sampler_banks(host,track,nil)
+    for bank_number,worker in pairs(bank_tracks) do remove_sampler_banks(host,worker,bank_number-1) end
+  end
   local pads = assert(allocator.allocate(rack.pads))
   local outputs = assert(allocator.allocate_outputs(rack.outputs))
   local namespace=math.max(0,math.min(bank.MAX_NAMESPACE,math.floor(tonumber(rack.engine_namespace) or 0)))
@@ -177,6 +196,7 @@ function M.reconcile(host, track, rack, previous)
       entry.signature=table.concat({path,entry.bank,entry.slot},"\0")
       entry.logical_bank,entry.logical_slot=location.bank,location.slot
       entry.namespace=namespace
+      entry.track=bank_tracks and bank_tracks[location.bank] or track
       next_cache[pad.id]=entry
     end
   end
@@ -206,7 +226,7 @@ function M.reconcile(host, track, rack, previous)
     if type(path) == "string" and path ~= "" then
       local location = assert(pads.by_pad_id[pad.id])
       if not ensured[location.bank] then
-        M.ensure_bank(host, track, location.bank - 1,namespace,true)
+        M.ensure_bank(host,(bank_tracks and bank_tracks[location.bank])or track,location.bank-1,namespace,true)
         ensured[location.bank] = true
         report.banks = report.banks + 1
       end
@@ -258,8 +278,12 @@ function M.poll(host, track, cache, limit)
       -- A newly inserted JSFX compiles asynchronously. REAPER can restore its
       -- default sliders after the first synchronous parameter write, so bind
       -- the mailbox again while its initial sample request is outstanding.
-      if track and not rebound[entry.bank] then
-        M.ensure_bank(host,track,entry.bank-1,entry.namespace,true)
+      local bank_track=entry.track or track
+      if bank_track and not rebound[entry.bank] then
+        -- Polling is read-mostly.  Do not issue TrackFX_Show every frame while
+        -- a large kit is decoding; native FX-window commands make REAPER's
+        -- menu bar visibly repaint and add avoidable main-thread work.
+        M.ensure_bank(host,bank_track,entry.bank-1,entry.namespace,false)
         rebound[entry.bank]=true
       end
       local status=bank.status(host,entry.bank-1,entry.slot-1,entry.namespace)
@@ -281,7 +305,7 @@ function M.poll(host, track, cache, limit)
   return {checked=checked,ready=ready,failed=failed}
 end
 
-function M.publish_pad(host, track, rack, pad, cache_entry)
+local function pad_publication(rack,pad,cache_entry,audible)
   local logical_index = assert(tonumber(pad.logical_index), "pad logical index is required")
   local bank_index = math.floor((logical_index - 1) / 16)
   local slot_index = (logical_index - 1) % 16
@@ -291,12 +315,27 @@ function M.publish_pad(host, track, rack, pad, cache_entry)
   end
   assert(output_pair ~= nil, "pad references an unknown logical output")
   local namespace=math.max(0,math.min(bank.MAX_NAMESPACE,math.floor(tonumber(rack.engine_namespace) or 0)))
-  M.ensure_bank(host, track, bank_index,namespace)
   local sample_slot=cache_entry and cache_entry.bank==bank_index+1 and cache_entry.slot-1 or slot_index
-  local any_solo=false
-  for _,candidate in ipairs(rack.pads or {}) do if candidate.sample~=false and candidate.sample~=nil and candidate.soloed==true then any_solo=true;break end end
-  local audible=pad.muted~=true and(not any_solo or pad.soloed==true)
-  return bank.publish_controls(host, bank_index, slot_index, M.controls_from_pad(pad, output_pair,sample_slot,audible),namespace)
+  if audible==nil then
+    local any_solo=false
+    for _,candidate in ipairs(rack.pads or {}) do if candidate.sample~=false and candidate.sample~=nil and candidate.soloed==true then any_solo=true;break end end
+    audible=pad.muted~=true and(not any_solo or pad.soloed==true)
+  end
+  return bank_index,slot_index,namespace,M.controls_from_pad(pad,output_pair,sample_slot,audible)
+end
+
+-- A live drag only changes the small gmem control packet. Structural loading
+-- has already created the bank, so avoid rescanning and rewriting the FX chain
+-- on every mouse sample.
+function M.publish_pad_controls(host,rack,pad,cache_entry,audible)
+  local bank_index,slot_index,namespace,controls=pad_publication(rack,pad,cache_entry,audible)
+  return bank.publish_controls(host,bank_index,slot_index,controls,namespace)
+end
+
+function M.publish_pad(host, track, rack, pad, cache_entry)
+  local bank_index,slot_index,namespace,controls=pad_publication(rack,pad,cache_entry)
+  M.ensure_bank(host,track,bank_index,namespace)
+  return bank.publish_controls(host,bank_index,slot_index,controls,namespace)
 end
 
 return M

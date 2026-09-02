@@ -1,4 +1,3 @@
-// @noindex
 desc:ReaDrum Sampler Bank 16
 tags:instrument sampler ReaDrum
 options:gmem=ReaDrumSampler maxmem=128000000 gfx_idle_only gfx_hz=30 no_meter
@@ -7,6 +6,10 @@ slider2:0<0,16777215,1>-Audio heartbeat
 slider3:0<0,16777215,1>-Idle heartbeat
 slider4:0<-1,16777215,1>-Last command observed
 slider5:0<0,7,1>-Engine namespace
+slider6:0<0,16777215,1>-Diagnostic note-ons received
+slider7:0<0,16777215,1>-Diagnostic voices started
+slider8:0<0,256,1>-Diagnostic active voices
+slider9:0<0,256,1>-Diagnostic active voice peak
 
 in_pin:Bus 1 L
 in_pin:Bus 1 R
@@ -125,6 +128,10 @@ SAMPLE_BASE=1000000;
 REGION_ITEMS=3500000;
 
 voice_clock=1;
+active_voice_limit=0;
+mask_ramp_active=0;
+note_ons_received=0;
+voices_started=0;
 bank_base=1800000+(slider5|0)*8*BANK_STRIDE+(slider1|0)*BANK_STRIDE;
 active_bank_base=bank_base;
 
@@ -251,14 +258,50 @@ function slot_voice_count(slot)local(v,n)(
   v=0;n=0;loop(MAX_VOICES,VOICES[voice(v,0)]&&VOICES[voice(v,1)]==slot?n+=1;v+=1;);n;
 );
 
-function choose_voice(slot)local(v,free,fallback,oldest,t)(
-  v=0;free=-1;fallback=-1;oldest=pow(10,30);
+function choose_voice(slot)local(v,free,fallback,any_fallback,oldest,any_oldest,t)(
+  v=0;free=-1;fallback=-1;any_fallback=-1;oldest=pow(10,30);any_oldest=pow(10,30);
   loop(MAX_VOICES,
     !VOICES[voice(v,0)] && free<0 ? free=v;
+    VOICES[voice(v,0)] ? (
+      t=VOICES[voice(v,12)];t<any_oldest?(any_oldest=t;any_fallback=v;);
+      VOICES[voice(v,1)]==slot && t<oldest?(oldest=t;fallback=v;);
+    );
+    v+=1;
+  );
+  free>=0?free:(fallback>=0?fallback:any_fallback);
+);
+
+// Polyphony enforcement must retire a voice owned by this slot.  The general
+// allocator prefers any globally free voice, which does not reduce the slot's
+// count and previously made the >= polyphony loop run forever on hit 16/17.
+function oldest_slot_voice(slot)local(v,fallback,oldest,t)(
+  v=0;fallback=-1;oldest=pow(10,30);
+  loop(MAX_VOICES,
     VOICES[voice(v,0)] && VOICES[voice(v,1)]==slot ? (t=VOICES[voice(v,12)];t<oldest?(oldest=t;fallback=v;););
     v+=1;
   );
-  free>=0?free:(fallback>=0?fallback:0);
+  fallback;
+);
+
+// One bounded pass performs the common retrigger/choke work and chooses the
+// destination voice.  The former path scanned all 256 voices three or four
+// times for every note-on, producing large blocks of work on 128-pad hits.
+function prepare_voice(slot,self_choke,group,poly)local(v,b,s,free,slot_oldest,any_oldest,slot_time,any_time,t,count)(
+  v=0;free=-1;slot_oldest=-1;any_oldest=-1;slot_time=pow(10,30);any_time=pow(10,30);count=0;
+  loop(MAX_VOICES,
+    b=voice(v,0);
+    VOICES[b] ? (
+      s=VOICES[b+1]|0;t=VOICES[b+12];
+      t<any_time?(any_time=t;any_oldest=v;);
+      s==slot ? (
+        count+=1;t<slot_time?(slot_time=t;slot_oldest=v;);
+        self_choke?release_voice(v,0.003);
+      ) : group>0&&CTRL[ctrl(s,13)]==group?release_voice(v,0.001);
+    ) : free<0?free=v;
+    v+=1;
+  );
+  count>=poly&&slot_oldest>=0?(VOICES[voice(slot_oldest,0)]=0;slot_oldest):
+    free>=0?free:(slot_oldest>=0?slot_oldest:any_oldest);
 );
 
 function latest_glide_voice(slot)local(v,found,newest,b,remaining)(
@@ -272,7 +315,7 @@ function latest_glide_voice(slot)local(v,found,newest,b,remaining)(
   );found;
 );
 
-function start_voice(slot,note,vel)local(storage,m,c,v,frames,startf,endf,rate,start_rate,gain,pan,left,right,a,d,sus,out,glide,glide_voice,b,glide_samples,legato,retrigger,xfade,soft)(
+function start_voice(slot,note,vel)local(storage,m,c,v,frames,startf,endf,rate,start_rate,gain,pan,left,right,a,d,sus,out,glide,glide_voice,b,glide_samples,legato,retrigger,xfade,soft,self_choke)(
   legato=LEGATO_STATE[slot];LEGATO_STATE[slot]=0;
   soft=max(0,min(1,TRANSIENT_SHIFT[slot]));TRANSIENT_SHIFT[slot]=0;
   c=ctrl(slot,0);storage=max(0,min(15,CTRL[c+21]|0));m=meta(storage,0);frames=META[m+1];
@@ -286,12 +329,9 @@ function start_voice(slot,note,vel)local(storage,m,c,v,frames,startf,endf,rate,s
       b=voice(glide_voice,0);glide_samples=max(1,floor(glide*srate));VOICES[b+2]=note;VOICES[b+18]=rate;VOICES[b+19]=(rate-VOICES[b+5])/glide_samples;VOICES[b+20]=glide_samples;
     ):(
       start_rate=rate;xfade=0;
-      glide_voice>=0&&retrigger?(b=voice(glide_voice,0);start_rate=VOICES[b+5];xfade=max(0,SLIDE_XFADE[slot]);release_voice(glide_voice,max(.001,xfade));):CTRL[c+12] ? kill_slot(slot);
-      release_group(CTRL[c+13],slot,0.001);
-      while(slot_voice_count(slot)>=max(1,CTRL[c+11]|0))(
-        v=choose_voice(slot);VOICES[voice(v,0)]=0;
-      );
-      v=choose_voice(slot);
+      self_choke=CTRL[c+12]&&!(glide_voice>=0&&retrigger);
+      glide_voice>=0&&retrigger?(b=voice(glide_voice,0);start_rate=VOICES[b+5];xfade=max(0,SLIDE_XFADE[slot]);release_voice(glide_voice,max(.001,xfade)););
+      v=prepare_voice(slot,self_choke,CTRL[c+13]|0,max(1,CTRL[c+11]|0));
       startf=clamp01(CTRL[c+9]);endf=clamp01(CTRL[c+10]);
       startf=floor(startf*(frames-1));
       endf=max(startf+1,floor(endf*frames));
@@ -308,6 +348,8 @@ function start_voice(slot,note,vel)local(storage,m,c,v,frames,startf,endf,rate,s
       glide_samples=glide>0?max(1,floor(glide*srate)):0;VOICES[b+19]=glide_samples>0?(rate-start_rate)/glide_samples:0;VOICES[b+20]=glide_samples;
       VOICES[b+21]=xfade>0?max(1,floor(xfade*srate)):0;VOICES[b+22]=VOICES[b+21];
       VOICES[b+23]=soft>0?max(1,floor(soft*.01*srate)):0;VOICES[b+24]=0;
+      active_voice_limit=max(active_voice_limit,v+1);
+      voices_started=(voices_started%16777214)+1;slider7=voices_started;
       voice_clock+=1;
     );
   );
@@ -362,7 +404,7 @@ function process_load(load_slot)local(command_base,command,op,path_len,status,it
   );
 );
 
-v=0;loop(MAX_VOICES,VOICES[voice(v,0)]=0;v+=1;);
+v=0;loop(MAX_VOICES,VOICES[voice(v,0)]=0;v+=1;);active_voice_limit=0;
 // ext_noinit deliberately preserves loaded sample buffers across a JSFX source
 // recompile. Preserve their matching META descriptors as well; clearing only
 // the descriptors strands valid audio in memory while the Lua cache still
@@ -379,7 +421,7 @@ bank_base!=active_bank_base ? (
   // metadata here: doing so silences the whole bank during normal playback.
   // Reset only mailbox observations and pending swap state; the controller
   // will explicitly replace samples whose paths actually changed.
-  v=0;loop(MAX_VOICES,VOICES[voice(v,0)]=0;v+=1;);
+  v=0;loop(MAX_VOICES,VOICES[voice(v,0)]=0;v+=1;);active_voice_limit=0;
   i=0;loop(SLOTS,META[meta(i,7)]=0;META[meta(i,8)]=-1;META[meta(i,9)]=0;META[meta(i,10)]=0;CTRL[ctrl(i,0)]=-1;LAST_AUDITION[i]=gmem[bank_base+AUDITION_OFFSET+i*4];i+=1;);
   active_bank_base=bank_base;
 );
@@ -392,13 +434,16 @@ load_slot=0;loop(SLOTS,process_load(load_slot);load_slot+=1;);
 
 @block
 slider2=(slider2%16777214)+1;
+diagnostic_active=0;diagnostic_v=0;loop(active_voice_limit,VOICES[voice(diagnostic_v,0)]?diagnostic_active+=1;diagnostic_v+=1;);slider8=diagnostic_active;slider9=max(slider9,diagnostic_active);
 // Apply per-slot controls by revision, then commit completed inactive buffers.
 i=0;loop(SLOTS,
   src=bank_base+CONTROL_OFFSET+i*CONTROL_WORDS;revision=gmem[src];c=ctrl(i,0);
   revision!=CTRL[c] ? (
     j=0;loop(CTRL_WORDS,CTRL[c+j]=gmem[src+j];j+=1;);
   );
-  mask=gmem[bank_base+AUDIO_MASK_OFFSET+i];AUDIBLE_TARGET[i]=mask==1?0:1;
+  mask=gmem[bank_base+AUDIO_MASK_OFFSET+i];target=mask==1?0:1;
+  target!=AUDIBLE_TARGET[i]?mask_ramp_active=1;
+  AUDIBLE_TARGET[i]=target;
   SLIDE_RETRIGGER[i]=gmem[bank_base+SLIDE_OFFSET+i*2];SLIDE_XFADE[i]=max(0,min(.1,gmem[bank_base+SLIDE_OFFSET+i*2+1]));
   META[meta(i,7)]!=0 && META[meta(i,7)]!=META[meta(i,3)] ? (
     META[meta(i,0)]=META[meta(i,4)];META[meta(i,1)]=META[meta(i,5)];META[meta(i,2)]=META[meta(i,6)];META[meta(i,3)]=META[meta(i,7)];META[meta(i,7)]=0;
@@ -416,7 +461,7 @@ while(midirecv(offset,msg1,msg2,msg3))(
   input_bus=midi_bus;
   input_bus==(slider1|0) ? (
     status=msg1&$xF0;slot=msg1&$x0F;
-    status==$x90 && msg3>0 ? start_voice(slot,msg2,msg3) :
+    status==$x90 && msg3>0 ? (note_ons_received=(note_ons_received%16777214)+1;slider6=note_ons_received;start_voice(slot,msg2,msg3);) :
     (status==$x80 || (status==$x90&&msg3==0)) ? note_off(slot,msg2) :
     // Stop and explicit choke are transport operations, not musical note-offs:
     // always terminate promptly through a short de-click ramp.
@@ -433,41 +478,62 @@ while(midirecv(offset,msg1,msg2,msg3))(
 );
 
 @sample
-i=0;loop(SLOTS,
-  target=AUDIBLE_TARGET[i];gain=AUDIBLE_GAIN[i];delta=target-gain;mask_step=1/max(1,0.005*srate);abs(delta)<=mask_step?gain=target:gain+=(delta>0?mask_step:-mask_step);AUDIBLE_GAIN[i]=gain;i+=1;
+mask_ramp_active ? (
+  mask_ramp_active=0;
+  i=0;loop(SLOTS,
+    target=AUDIBLE_TARGET[i];gain=AUDIBLE_GAIN[i];delta=target-gain;mask_step=1/max(1,0.005*srate);
+    abs(delta)<=mask_step?gain=target:(gain+=(delta>0?mask_step:-mask_step);mask_ramp_active=1;);
+    AUDIBLE_GAIN[i]=gain;i+=1;
+  );
 );
-v=0;loop(MAX_VOICES,
+v=0;loop(active_voice_limit,
   active=VOICES[voice(v,0)];
   active ? (
     slot=VOICES[voice(v,1)]|0;storage=VOICES[voice(v,16)]|0;m=meta(storage,0);which=VOICES[voice(v,14)]|0;channels=VOICES[voice(v,15)]|0;
     pos=VOICES[voice(v,3)];endf=VOICES[voice(v,4)];
     pos>=endf||channels<1 ? VOICES[voice(v,0)]=0 : (
-      base=region_base(storage,which);frame=floor(pos);frac=pos-frame;last=endf-1;
-      channels==1 ? (
+      base=region_base(storage,which);frame=floor(pos);frac=pos-frame;last=endf-1;b=voice(v,0);
+      // The overwhelmingly common drum path is unpitched playback from an
+      // integer frame.  Direct reads are bit-identical to cubic interpolation
+      // at frac=0 and avoid six extra reads plus polynomial work per stereo voice.
+      VOICES[b+5]==1&&frac==0 ? (
+        sample_l=base[frame*channels];sample_r=channels==1?sample_l:base[frame*channels+1];
+      ) : channels==1 ? (
         sample_l=cubic_sample(base,channels,frame,0,frac,last);sample_r=sample_l;
       ) : (
         sample_l=cubic_sample(base,channels,frame,0,frac,last);
         sample_r=cubic_sample(base,channels,frame,1,frac,last);
       );
-      env=VOICES[voice(v,9)];stage=VOICES[voice(v,10)]|0;sus=VOICES[voice(v,11)];step=VOICES[voice(v,13)];
-      stage==1 ? (env+=step;env>=1?(env=1;d=CTRL[ctrl(slot,6)];stage=d>0?2:0;step=d>0?(1-sus)/(d*srate):0;);) :
-      stage==2 ? (env-=step;env<=sus?(env=sus;stage=0;);) :
-      stage==3 ? (env-=step;env<=0?(env=0;VOICES[voice(v,0)]=0;););
-      VOICES[voice(v,9)]=env;VOICES[voice(v,10)]=stage;VOICES[voice(v,13)]=step;
+      env=VOICES[b+9];stage=VOICES[b+10]|0;
+      stage!=0 ? (
+        sus=VOICES[b+11];step=VOICES[b+13];
+        stage==1 ? (env+=step;env>=1?(env=1;d=CTRL[ctrl(slot,6)];stage=d>0?2:0;step=d>0?(1-sus)/(d*srate):0;);) :
+        stage==2 ? (env-=step;env<=sus?(env=sus;stage=0;);) :
+        stage==3 ? (env-=step;env<=0?(env=0;VOICES[b]=0;););
+        VOICES[b+9]=env;VOICES[b+10]=stage;VOICES[b+13]=step;
+      );
       VOICES[voice(v,0)] ? (
         voice_start=VOICES[voice(v,17)];fade=1;region_len=max(1,endf-voice_start);fi=min(region_len,CTRL[ctrl(slot,17)]*srate);fo=min(region_len,CTRL[ctrl(slot,18)]*srate);
-        fi>0 ? (x=clamp01((pos-voice_start)/fi);fade=min(fade,curve01(x,CTRL[ctrl(slot,19)])););
-        fo>0 ? (x=clamp01((endf-pos)/fo);fade=min(fade,curve01(x,CTRL[ctrl(slot,20)])););
+        fi>0&&pos<voice_start+fi ? (x=(pos-voice_start)/fi;fade=min(fade,curve01(x,CTRL[ctrl(slot,19)])););
+        fo>0&&pos>endf-fo ? (x=(endf-pos)/fo;fade=min(fade,curve01(x,CTRL[ctrl(slot,20)])););
         VOICES[voice(v,22)]>0?(fade*=sin((1-VOICES[voice(v,22)]/max(1,VOICES[voice(v,21)]))*$pi*.5);VOICES[voice(v,22)]-=1;);
         VOICES[voice(v,23)]>0?(fade*=sin(min(1,VOICES[voice(v,24)]/VOICES[voice(v,23)])*$pi*.5);VOICES[voice(v,24)]+=1;);
         out_l=sample_l*VOICES[voice(v,6)]*env*fade*AUDIBLE_GAIN[slot];out_r=sample_r*VOICES[voice(v,7)]*env*fade*AUDIBLE_GAIN[slot];
         SLOT_PEAK_L[slot]=max(SLOT_PEAK_L[slot],abs(out_l));SLOT_PEAK_R[slot]=max(SLOT_PEAK_R[slot],abs(out_r));
         out=VOICES[voice(v,8)]|0;spl(out*2)+=out_l;spl(out*2+1)+=out_r;
-        spl32+=out_l*CTRL[ctrl(slot,22)];spl33+=out_r*CTRL[ctrl(slot,22)];
-        spl34+=out_l*CTRL[ctrl(slot,23)];spl35+=out_r*CTRL[ctrl(slot,23)];
+        // Keep each logical output's wet feeds separate so they can pass
+        // through that output track's post-fader routing before reaching AUX.
+        send_gain=CTRL[ctrl(slot,22)];send_gain!=0?(spl(32+out*2)+=out_l*send_gain;spl(33+out*2)+=out_r*send_gain;);
+        send_gain=CTRL[ctrl(slot,23)];send_gain!=0?(spl(64+out*2)+=out_l*send_gain;spl(65+out*2)+=out_r*send_gain;);
         b=voice(v,0);VOICES[b+20]>0?(VOICES[b+5]+=VOICES[b+19];VOICES[b+20]-=1;VOICES[b+20]<=0?VOICES[b+5]=VOICES[b+18];);VOICES[b+3]=pos+VOICES[b+5];
       );
     );
   );
   v+=1;
+);
+// Voices are allocated from the first free slot, so trimming inactive slots
+// from the tail makes a silent bank execute no voice loop at all. Holes below
+// the high-water mark remain safe and are reused by choose_voice().
+while(active_voice_limit>0 && !VOICES[voice(active_voice_limit-1,0)])(
+  active_voice_limit-=1;
 );

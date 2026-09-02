@@ -1,15 +1,24 @@
--- @noindex
 local state = require("ReaDrum.app.state")
 local model = require("ReaDrum.core.model")
 local theme = require("ReaDrum.app.theme")
 local eula = require("ReaDrum.app.eula")
 local groove = require("ReaDrum.core.groove")
+local envelope = require("ReaDrum.core.envelope")
+local envelope_math = envelope
 
 local module_source=debug.getinfo(1,"S").source:sub(2)
 local product_directory=assert(module_source:match("^(.*)[/\\]app[/\\]ui%.lua$"),"ReaDrum UI must remain inside Scripts/ReaDrum/app")
 
 local UI = {}
 UI.__index = UI
+
+local function log_ui_error(area,failure)
+  pcall(function()
+    local file=assert(io.open(product_directory..package.config:sub(1,1).."ReaDrum-error.log","ab"))
+    file:write(os.date("!%Y-%m-%dT%H:%M:%SZ"),"  ",area,"\n",tostring(failure),"\n\n")
+    file:close()
+  end)
+end
 
 local C = {
   window = 0x101215FF, panel = 0x171A1EFF, panel2 = 0x20242AFF,
@@ -27,11 +36,22 @@ local PAD_HEX={"#C82C55","#3A86D4","#E0522D","#49A25B","#8457C5","#D18422","#2B9
 
 local DEFAULTS = {
   volume=0.354, pan=0.5, pitch=0.5, sample_start=0, sample_end=1,
-  -- Native blank-RS5K visible envelope defaults.
-  attack=0, decay=0.02, sustain=1.0, release=0,
+  -- Neutral musical envelope defaults; the decay control resolves to 250 ms.
+  attack=0, decay=envelope.DEFAULT_DECAY_CONTROL, sustain=1.0, release=0,
   fade_in=0, fade_out=0, fade_in_curve=.5, fade_out_curve=.5,
   obey_note_offs=1, loop=0,
 }
+
+local ENVELOPE_TIME_MAX = {
+  attack=envelope.ATTACK_MAX_SECONDS,
+  decay=envelope.DECAY_MAX_SECONDS,
+  release=envelope.RELEASE_MAX_SECONDS,
+}
+
+local function envelope_value_text(key,value)
+  if key=="sustain" then return envelope.format_sustain(value) end
+  return envelope.format_time(envelope.time_seconds(value,assert(ENVELOPE_TIME_MAX[key],"unknown envelope time")))
+end
 
 local function pad_pitch_values(controls)
   if controls.transpose_semitones~=nil or controls.tune_cents~=nil then
@@ -51,6 +71,7 @@ end
 local GRID_STEP_X,GRID_CELL_WIDTH,GRID_CELL_STRIDE=359,27,32
 local LANE_TOOLBAR_HEIGHT=24
 local PAD_MIDI_BASE=36 -- C2 in REAPER's default octave naming
+local WAVEFORM_PEAK_COUNT=4096
 
 local PROPERTIES = {
   { label="Velocity", short="VEL", key="velocity", kind="int", min=1, max=127, default=100, format="%d" },
@@ -87,6 +108,10 @@ local function no_scroll_flags(r)
   if r.ImGui_WindowFlags_NoScrollbar then flags=flags|r.ImGui_WindowFlags_NoScrollbar() end
   if r.ImGui_WindowFlags_NoScrollWithMouse then flags=flags|r.ImGui_WindowFlags_NoScrollWithMouse() end
   return flags
+end
+
+local function controlled_scroll_flags(r)
+  return r.ImGui_WindowFlags_NoScrollWithMouse and r.ImGui_WindowFlags_NoScrollWithMouse() or 0
 end
 
 local function note_name(note)
@@ -164,7 +189,7 @@ function UI.new(host, app)
   local saved_audition=host.GetExtState and host.GetExtState("ReaDrum5k","audition_while_editing") or ""
   local saved_waveform_adsr=host.GetExtState and host.GetExtState("ReaDrum5k","show_adsr_on_waveform") or ""
   local saved_pad_step_colors=host.GetExtState and host.GetExtState("ReaDrum5k","color_steps_by_pad") or ""
-  local saved_perf_probe=host.GetExtState and host.GetExtState("ReaDrum5k","performance_probe") or ""
+  if host.DeleteExtState then host.DeleteExtState("ReaDrum5k","performance_probe",true) end
   local saved_max_outputs=tonumber(host.GetExtState and host.GetExtState("ReaDrum5k","max_stereo_outputs") or "")
   local max_outputs=saved_max_outputs==16 and 16 or 8
   local separator=package.config:sub(1,1)
@@ -175,8 +200,8 @@ function UI.new(host, app)
   local self=setmetatable({
     host=host, app=app, ctx=host.ImGui_CreateContext("ReaDrumXT", flags), open=true,
     property=1, info_open=false, info_tab="variations", parameter_open=false, editor_mode="properties", lane_toolbar_open=true, inspector_open=true, parameter_height=190, main_view="sequencer",
-    inspector_mode="pads", edit_focus="steps", multi_select=false, show_active_only=false, pad_pitch_mode="transpose",
-    selected_pads={}, pad_flash_until={}, pad_trigger_tokens=false, mixer_clip_until={}, mixer_meter_hold={}, mixer_meter_time={}, engine_trigger_token=false, waveform_cache={}, waveform_queue={}, waveform_queue_set={}, audition_due=false, audition_token=0, audition_release_token=0, paint_active=false, paint_value=false, paint_button=0, paint_lane=false, paint_last_step=false, paint_accent=false,
+    inspector_mode="pads", edit_focus="steps", multi_select=false, pad_pitch_mode="transpose",
+    selected_pads={}, pad_flash_until={}, pad_trigger_tokens=false, mixer_clip_until={}, mixer_meter_hold={}, mixer_meter_time={}, engine_trigger_token=false, waveform_cache={}, waveform_duration={}, waveform_queue={}, waveform_queue_set={}, waveform_jobs={}, waveform_failures={}, live_pad_controls_pending=false, next_live_control_sync=0, audition_due=false, audition_token=0, audition_release_token=0, paint_active=false, paint_value=false, paint_button=0, paint_lane=false, paint_last_step=false, paint_accent=false,
     property_paint_active=false, property_paint_lane=false, property_paint_key=false, property_paint_position=false, property_paint_value=false,
     property_line_active=false, property_line_lane=false, property_line_key=false, property_line_position=false, property_line_value=false,
     property_reset_active=false, property_reset_lane=false, property_reset_key=false, property_reset_position=false,
@@ -189,13 +214,15 @@ function UI.new(host, app)
     grid_scroll_x=0, tooltips_enabled=saved_tooltips~="0", track_colors_enabled=saved_track_colors=="1", audition_enabled=saved_audition~="0",
     show_adsr_on_waveform=saved_waveform_adsr=="1",
     color_steps_by_pad=saved_pad_step_colors=="1",
-    perf_probe=saved_perf_probe=="1",perf_stats={},perf_last_frame=false,perf_report_path=false,max_outputs=max_outputs,
+    perf_probe=false,perf_stats={},perf_last_frame=false,perf_report_path=false,max_outputs=max_outputs,
+    lane_sustain_cache=setmetatable({}, {__mode="k"}),
     track_color_pref_initialized=saved_track_colors~="", theme=theme_state, preferences_tab="general",
     eula_view_open=false,eula_text=false,eula_error=false,
     groove_root=groove_root,groove_entries=false,groove_cache={},groove_filter="",groove_popup_seen=false,groove_popup_active=false,groove_preview_entry=false,
     groove_categories={},groove_category="",groove_nav_index=1,groove_nav_entry=false,
   }, UI)
   app.perf_callback=function(name,seconds) self:perf_record(name,seconds) end
+  app.ui_invalidate=function() self.lane_sustain_cache=setmetatable({}, {__mode="k"}) end
   return self
 end
 
@@ -207,8 +234,16 @@ function UI:perf_record(name,seconds)
   if seconds>=threshold then stat.over_2ms=stat.over_2ms+1 end
 end
 
+function UI:perf_begin()
+  return self.perf_probe and self.host.time_precise() or false
+end
+
+function UI:perf_end(name,started)
+  if started then self:perf_record(name,self.host.time_precise()-started) end
+end
+
 function UI:perf_reset()
-  self.perf_stats={};self.perf_last_frame=self.host.time_precise();self.perf_report_path=false
+  self.perf_stats={};self.perf_last_frame=self.host.time_precise();self.perf_report_path=false;self.perf_frame=0;self.perf_detail_frame=false
 end
 
 function UI:perf_write_report()
@@ -217,9 +252,50 @@ function UI:perf_write_report()
   local path=directory..package.config:sub(1,1).."performance_probe_"..os.date("%Y%m%d_%H%M%S")..".txt"
   local file=io.open(path,"wb");if not file then return false end
   file:write("ReaDrum performance probe\n")
-  file:write("Generated: ",os.date("%Y-%m-%d %H:%M:%S"),"\n\n")
+  file:write("Generated: ",os.date("%Y-%m-%d %H:%M:%S"),"\n")
+  local frame=self.perf_stats["loop total"] or self.perf_stats["frame total"] or self.perf_stats["ReaDrum frame"]
+  local frame_total=frame and frame.total or 0
+  file:write("Percentages are accumulated section wall-time / accumulated deferred-loop wall-time.\n")
+  file:write("Nested sections intentionally overlap and should not be summed.\n\n")
+  file:write("Detailed lane/cell sections are sampled once every 30 frames to avoid profiler-induced GUI load.\n")
+  file:write("Their averages are representative sampled durations; their totals/frame percentages are intentionally omitted.\n\n")
   local names={};for name in pairs(self.perf_stats)do names[#names+1]=name end;table.sort(names)
-  for _,name in ipairs(names)do local stat=self.perf_stats[name];file:write(string.format("%-22s count=%-6d avg=%8.3f ms max=%8.3f ms last=%8.3f ms over2ms=%d\n",name,stat.count,stat.total/stat.count*1000,stat.max*1000,stat.last*1000,stat.over_2ms))end
+  for _,name in ipairs(names)do
+    local stat=self.perf_stats[name]
+    local sampled=name:find("sampled ",1,true)==1
+    local percent=not sampled and frame_total>0 and stat.total/frame_total*100 or 0
+    file:write(string.format("%-28s count=%-7d avg=%8.3f ms max=%8.3f ms total=%10.1f ms frame%%=%7s over2ms=%d\n",name,stat.count,stat.total/stat.count*1000,stat.max*1000,stat.total*1000,sampled and "sample" or string.format("%.2f",percent),stat.over_2ms))
+  end
+  file:write("\nDispatcher diagnostics\n")
+  file:write("controller_revision=",tostring(self.app and self.app.revision),"\n")
+  file:write("controller_status=",tostring(self.app and self.app.status),"\n")
+  if self.app then
+    local track=self.app:find_track("sequencer")
+    if track and r.TrackFX_GetParam then
+      local fx=self.app:dispatcher(track)
+      local diagnostics={
+        {"active_revision",34},{"pending_revision",35},{"budget_status",44},
+        {"required_future_ons",45},{"required_block_clocks",46},{"required_block_ons",47},
+        {"required_retained_offs",48},{"required_off_slots",49},{"required_reconstruction_clocks",50},
+        {"budget_rejection",52},{"runtime_guard",53},{"future_queue_current",54},
+        {"future_queue_peak",55},{"off_queue_current",56},{"off_queue_peak",57},
+        {"runtime_fault_latch",58},{"stage_blocks",59},{"stage_current_ons",60},
+        {"stage_future_ons",61},{"stage_owned_ons",62},{"stage_result",63},
+        {"sample_rate",67},{"active_variation",71},{"transport_playing",79},
+      }
+      for _,item in ipairs(diagnostics)do file:write(item[1],"=",tostring(r.TrackFX_GetParam(track,fx,item[2])),"\n") end
+      file:write("\nSampler bank diagnostics\n")
+      for bank_fx=0,r.TrackFX_GetCount(track)-1 do
+        local ok,name=r.TrackFX_GetFXName(track,bank_fx,"")
+        if ok and name:find("ReaDrum Sampler Bank",1,true) then
+          file:write(string.format("bank_fx_%d name=%s bank=%s audio_heartbeat=%s note_ons=%s voices_started=%s active=%s peak=%s\n",
+            bank_fx,name,tostring(r.TrackFX_GetParam(track,bank_fx,0)),tostring(r.TrackFX_GetParam(track,bank_fx,1)),
+            tostring(r.TrackFX_GetParam(track,bank_fx,5)),tostring(r.TrackFX_GetParam(track,bank_fx,6)),
+            tostring(r.TrackFX_GetParam(track,bank_fx,7)),tostring(r.TrackFX_GetParam(track,bank_fx,8))))
+        end
+      end
+    else file:write("dispatcher=unavailable\n") end
+  end
   file:close();self.perf_report_path=path;return path
 end
 
@@ -241,7 +317,8 @@ function UI:bind_app(app)
   self.property_line_active=false;self.property_line_lane=false;self.property_line_key=false
   self.pad_drag_select=false;self.pad_drag_origin=false;self.pad_rearrange_drag=false
   self.lane_press_latch={}
-  self.waveform_queue={};self.waveform_queue_set={}
+  for _,job in pairs(self.waveform_jobs or {}) do if job.source and self.host.PCM_Source_Destroy then self.host.PCM_Source_Destroy(job.source) end end
+  self.waveform_queue={};self.waveform_queue_set={};self.waveform_jobs={};self.waveform_failures={}
   self.grid_scroll_x=0
 end
 
@@ -396,7 +473,15 @@ function UI:wheel_box(id,value,minimum,maximum,step,format,width,integer,tooltip
   r.ImGui_SetNextItemWidth(c,width or 64)
   local changed,next_value
   if integer~=false then
-    changed,next_value=r.ImGui_DragInt(c,"##"..id,value,step or 1,minimum,maximum,format or "%d")
+    -- Knob edits and older saved projects may provide fractional numeric state
+    -- for fields displayed as integers. ReaImGui's DragInt requires an actual
+    -- integer-representable Lua number, so normalize and repair it here.
+    local numeric=tonumber(value)
+    if not numeric or numeric~=numeric or numeric==math.huge or numeric==-math.huge then numeric=tonumber(default) or minimum end
+    local integral=math.floor(math.max(minimum,math.min(maximum,numeric))+.5)
+    local normalized=integral~=value
+    changed,next_value=r.ImGui_DragInt(c,"##"..id,integral,step or 1,minimum,maximum,format or "%d")
+    changed=changed or normalized
   else
     changed,next_value=r.ImGui_DragDouble(c,"##"..id,value,step or .01,minimum,maximum,format or "%.2f")
   end
@@ -795,13 +880,20 @@ function UI:pad_control_targets()
   return targets
 end
 
+function UI:queue_live_pad_controls(index)
+  self.app:queue_pad_controls(index,false)
+  self.live_pad_controls_pending=true
+end
+
 function UI:apply_selected_pad_control_edit(edit,immediate)
   local app=self.app
   for _,index in ipairs(self:pad_control_targets()) do
     local pad=app:pad(index);local controls=pad.default_controls or {};pad.default_controls=controls
-    edit(controls,index);app:queue_pad_controls(index,false)
+    edit(controls,index);self:queue_live_pad_controls(index)
   end
-  if immediate and app.sync_pending_pad_controls then app:sync_pending_pad_controls() end
+  -- Continuous controls are coalesced in UI:frame. The `immediate` argument
+  -- remains part of the call contract, but no longer blocks the drag frame.
+  if immediate then self.live_pad_controls_pending=true end
 end
 
 function UI:apply_selected_pad_controls(values,immediate)
@@ -1040,6 +1132,10 @@ function UI:knob(id,label,value,default,size,options)
   elseif hovered and r.ImGui_GetMouseWheel then
     local wheel=r.ImGui_GetMouseWheel(c)
     if wheel~=0 then
+      -- A hovered knob owns the gesture even at its min/max, where its value
+      -- cannot change. Otherwise the same wheel event scrolls the inspector.
+      self.control_wheel_consumed=true
+      if r.ImGui_SetItemUsingMouseWheel then r.ImGui_SetItemUsingMouseWheel(c) end
       local increment=options.wheel_step or range*.02
       new_value=math.max(minimum,math.min(maximum,value+(wheel>0 and increment or -increment)));changed=new_value~=value
       if changed then self.wheel_commit=true end
@@ -1126,12 +1222,23 @@ function UI:pan_slider(id,value,width)
   local r,c=self.host,self.ctx
   r.ImGui_SetNextItemWidth(c,width or -1)
   local changed,next_value=r.ImGui_SliderDouble(c,id,value,0,1,"")
-  local wheel_changed,wheel_value=self:wheel_adjust(next_value,0,1,.01,false,false)
+  local wheel=r.ImGui_IsItemHovered(c) and r.ImGui_GetMouseWheel and r.ImGui_GetMouseWheel(c) or 0
+  -- Five pan points per wheel notch is quick enough for mixer work while
+  -- retaining useful control around center.
+  local wheel_changed,wheel_value=self:wheel_adjust(next_value,0,1,.025,false,false)
   if wheel_changed then changed,next_value=true,wheel_value end
+  if wheel~=0 then self.knob_value_until[id]=(r.time_precise and r.time_precise() or 0)+.8 end
   if r.ImGui_IsItemHovered(c) and r.ImGui_IsMouseClicked and r.ImGui_IsMouseClicked(c,1) then changed,next_value=next_value~=.5,.5 end
   local x1,y1=r.ImGui_GetItemRectMin(c);local x2,y2=r.ImGui_GetItemRectMax(c)
   r.ImGui_DrawList_AddLine(r.ImGui_GetWindowDrawList(c),(x1+x2)*.5,y1+2,(x1+x2)*.5,y2-2,C.text,1)
-  self:tooltip("Pan — mouse wheel\nRight-click to center")
+  local amount=math.floor(math.abs((next_value-.5)*200)+.5)
+  local shown=amount==0 and "C" or ((next_value<.5 and "L " or "R ")..amount.."%")
+  local active=r.ImGui_IsItemActive(c)
+  local show_wheel=r.ImGui_IsItemHovered(c) and (self.knob_value_until[id] or 0)>(r.time_precise and r.time_precise() or 0)
+  if active or show_wheel then
+    if r.ImGui_BeginTooltip and r.ImGui_EndTooltip then r.ImGui_BeginTooltip(c);r.ImGui_Text(c,shown);r.ImGui_EndTooltip(c)
+    elseif r.ImGui_SetTooltip then r.ImGui_SetTooltip(c,shown) end
+  else self:tooltip("Pan — mouse wheel\nRight-click to center") end
   return changed,next_value
 end
 
@@ -1199,7 +1306,9 @@ function UI:fader_cap(value,minimum,maximum,accent)
   local r,c=self.host,self.ctx
   local x1,y1=r.ImGui_GetItemRectMin(c);local x2,y2=r.ImGui_GetItemRectMax(c)
   local normalized=math.max(0,math.min(1,((value or minimum)-minimum)/math.max(.000001,maximum-minimum)))
-  local cap_h=40;local cy=y2-normalized*(y2-y1);cy=math.max(y1+cap_h*.5,math.min(y2-cap_h*.5,cy))
+  local cap_h=math.min(40,math.max(1,y2-y1))
+  local center_top,center_bottom=y1+cap_h*.5,y2-cap_h*.5
+  local cy=center_bottom-normalized*math.max(0,center_bottom-center_top)
   local left,right=x1-4,x2+4;local top,bottom=cy-cap_h*.5,cy+cap_h*.5;local draw=r.ImGui_GetWindowDrawList(c)
   r.ImGui_DrawList_AddRectFilled(draw,left+2,top+3,right+3,bottom+4,0x00000042,3)
   if r.ImGui_DrawList_AddRectFilledMultiColor then
@@ -1222,8 +1331,9 @@ function UI:begin_unframed(id,width,height,flags)
 end
 
 function UI:end_panel(visible)
-  -- ReaImGui clips a child by returning false without entering it. Unlike
-  -- upstream Dear ImGui, that clipped path must not be paired with EndChild.
+  -- ReaImGui does not leave a child window on the stack when BeginChild
+  -- returns false. Calling EndChild on that clipped path asserts, so pair it
+  -- only when the binding reports that the child was entered.
   if visible then self.host.ImGui_EndChild(self.ctx) end
 end
 
@@ -1578,8 +1688,6 @@ function UI:top_toolbar()
              self.max_outputs=output_choice==1 and 16 or 8;app.max_outputs=self.max_outputs
              if r.SetExtState then r.SetExtState("ReaDrum5k","max_stereo_outputs",tostring(self.max_outputs),true) end
            end
-          -- The performance probe remains available to development builds by
-          -- setting ReaDrum5k/performance_probe to 1, but is not user-facing.
           r.ImGui_Separator(c)
           if r.ImGui_Button(c,"View EULA",110,25) then
             self.eula_text,self.eula_error=eula.load(product_directory)
@@ -1608,7 +1716,7 @@ end
 function UI:info_panel(height)
   local r,c,app=self.host,self.ctx,self.app
   if not self.info_open then return end
-  local visible=self:begin_panel("##info",238,height)
+  local visible=self:begin_panel("##info",238,height,controlled_scroll_flags(r))
   if visible then
     local info_scroll_y=r.ImGui_GetScrollY and r.ImGui_GetScrollY(c) or 0
     self.control_wheel_consumed=false
@@ -1714,7 +1822,13 @@ function UI:info_panel(height)
       r.ImGui_SameLine(c);if self:button("Clear##lanes",66,24,C.red) then app:clear_lanes(indices) end
       if self:button("Reset lane settings",210,24) then for _,i in ipairs(indices) do local lane=app:lane(i);lane.timing_offset=0;lane.velocity_scale=100;lane.velocity_sensitivity=100;lane.gate_scale=100;lane.accentuator_enabled=true;lane.global_swing_enabled=true;lane.global_gate_enabled=true;lane.global_velocity_sensitivity_enabled=true;lane.global_velocity_humanize_enabled=true;lane.velocity_humanize=0;lane.timing_humanize=0;lane.pitch_humanize=0;lane.pan_humanize=0;lane.swing=0 end;app:mark_dirty(false) end
     end
-    if self.control_wheel_consumed and r.ImGui_SetScrollY then r.ImGui_SetScrollY(c,info_scroll_y) end
+    if r.ImGui_SetScrollY then
+      if self.control_wheel_consumed then r.ImGui_SetScrollY(c,info_scroll_y)
+      elseif r.ImGui_IsWindowHovered(c) and r.ImGui_GetMouseWheel then
+        local wheel=r.ImGui_GetMouseWheel(c)
+        if wheel~=0 then r.ImGui_SetScrollY(c,math.max(0,info_scroll_y-wheel*38)) end
+      end
+    end
   end
   self:end_panel(visible)
   r.ImGui_SameLine(c)
@@ -1725,7 +1839,10 @@ function UI:lane_toolbar(height)
   r.ImGui_PushStyleVar(c,r.ImGui_StyleVar_WindowPadding(),3,0)
   local visible=self:begin_panel("##lane_toolbar",0,height,no_scroll_flags(r))
   r.ImGui_PopStyleVar(c)
+  local toolbar_failure
   if visible then
+    local toolbar_ok
+    toolbar_ok,toolbar_failure=xpcall(function()
     local indices=self:selected_pad_indices();if #indices==0 then indices={app.selected_pad} end
     local function common(key,default)
       local value=app:lane(indices[1])[key]
@@ -1823,8 +1940,14 @@ function UI:lane_toolbar(height)
     tight();if self:icon_button("##lane_toolbar_copy","copy","Copy selected lanes",28,24,false,nil,false,true) then app:copy_lanes(indices) end
     tight();if self:icon_button("##lane_toolbar_paste","paste","Paste into selected lanes",28,24,false,nil,false,true) then app:paste_lanes(indices) end
     tight();if self:icon_button("##lane_toolbar_clear","trash","Clear selected lanes",28,24,false,C.red,false,true) then app:clear_lanes(indices) end
+    end,debug.traceback)
   end
   self:end_panel(visible)
+  if toolbar_failure then
+    log_ui_error("ReaDrumXT lane toolbar",toolbar_failure)
+    self.lane_toolbar_open=false
+    app.status="Lane toolbar was closed after an internal error; details were saved to ReaDrum-error.log"
+  end
 end
 
 function UI:pad_drag_source(index)
@@ -1923,6 +2046,24 @@ local function note_owner_at(lane,index)
   return false
 end
 
+function UI:lane_sustain_owners(lane)
+  local cached=self.lane_sustain_cache[lane]
+  if cached then return cached end
+  local owners={}
+  -- Build the complete sustain map once after an edit. At idle the same table
+  -- is reused instead of scanning backward (and repeatedly scanning forward)
+  -- for every disabled visible cell on every frame.
+  for start=1,lane.step_count do
+    local step=lane.steps[start]
+    if step and step.enabled then
+      local finish=start+note_span_steps(lane,start)-1
+      for position=start+1,finish do owners[position]=start end
+    end
+  end
+  self.lane_sustain_cache[lane]=owners
+  return owners
+end
+
 local function truncate_sustain_before(lane,index)
   local owner=note_owner_at(lane,index)
   if owner and owner<index then lane.steps[owner].gate=(index-owner)*100 end
@@ -1970,12 +2111,15 @@ function UI:sequence_grid(height)
   local visible=self:begin_panel("##sequence",0,height,no_scroll_flags(r))
   if visible then
     self.sequence_wheel_consumed=false
+    local grid_part_started=self:perf_begin()
     local indices={}
-    for index=1,#app.rack.pads do
-      local pad,lane=app:pad(index),app:lane(index);local active=pad.sample~=false
-      if not active then for _,step in ipairs(lane.steps) do if step.enabled or step.cut then active=true;break end end end
-      if not self.show_active_only or active then indices[#indices+1]=index end
-    end
+    -- The sequencer is a bank editor, matching the sampler's eight 16-pad
+    -- processing banks. All 128 pads remain available through bank selection,
+    -- but the GUI never submits unrelated banks as hidden/overview rows.
+    local first=(math.max(1,math.min(8,app.rack.selected_bank or 1))-1)*16+1
+    for index=first,math.min(first+15,#app.rack.pads) do indices[#indices+1]=index end
+    self:perf_end("grid lane discovery",grid_part_started)
+    grid_part_started=self:perf_begin()
     -- Keep the full 64-step canvas available. Each lane still owns its active
     -- length; cells beyond it are only a dim, read-only preview.
     local max_steps=64
@@ -1993,9 +2137,6 @@ function UI:sequence_grid(height)
     end
     r.ImGui_SameLine(c,0,3)
     if self:icon_button("##toggle_lane_toolbar","humanize",self.lane_toolbar_open and "Hide lane toolbar" or "Show lane toolbar",24,22,self.lane_toolbar_open,nil,false,true) then self.lane_toolbar_open=not self.lane_toolbar_open end
-    r.ImGui_SameLine(c,174)
-    if self:button((self.show_active_only and "ACT" or "ALL").."##lanevisibility",31,22,self.show_active_only and C.selected or C.panel2) then self.show_active_only=not self.show_active_only end
-    self:tooltip("Show loaded or programmed pads only")
     r.ImGui_SameLine(c,209);r.ImGui_TextDisabled(c,"M")
     r.ImGui_SameLine(c,239);r.ImGui_TextDisabled(c,"S")
     r.ImGui_SameLine(c,261);r.ImGui_TextDisabled(c,"STEPS")
@@ -2009,10 +2150,40 @@ function UI:sequence_grid(height)
     end
     if r.ImGui_DrawList_PopClipRect then r.ImGui_DrawList_PopClipRect(header_draw) end
     local _,lanes_height=r.ImGui_GetContentRegionAvail(c)
+    self:perf_end("grid header UI",grid_part_started)
+    local lane_row_height=28
+    local virtual_width=GRID_STEP_X+max_steps*GRID_CELL_STRIDE+8
+    -- The bank has exactly 16 rows. The former dynamic-lane drop target used
+    -- an extra 48 px tail here; retaining it lets ImGui drag auto-scroll into
+    -- phantom content and makes the boundary lane flash.
+    local virtual_height=math.max(40,#indices*lane_row_height+1)
+    if r.ImGui_SetNextWindowContentSize then r.ImGui_SetNextWindowContentSize(c,virtual_width,virtual_height) end
     local lanes_visible=self:begin_unframed("##sequence_lanes",0,math.max(40,lanes_height),flags)
     if lanes_visible then
-    for _,index in ipairs(indices) do
+    local scroll_y=r.ImGui_GetScrollY and r.ImGui_GetScrollY(c) or 0
+    local scroll_x_now=r.ImGui_GetScrollX and r.ImGui_GetScrollX(c) or 0
+    local viewport_width,viewport_height=r.ImGui_GetWindowSize(c)
+    local first_row=math.max(1,math.floor(scroll_y/lane_row_height)-1)
+    local last_row=math.min(#indices,math.ceil((scroll_y+viewport_height)/lane_row_height)+1)
+    local visible_grid_width=math.max(GRID_CELL_STRIDE,viewport_width-GRID_STEP_X)
+    local first_visible_step=math.max(1,math.floor(scroll_x_now/GRID_CELL_STRIDE))
+    local last_visible_step=math.min(max_steps,math.ceil((scroll_x_now+visible_grid_width)/GRID_CELL_STRIDE)+1)
+    local lane_origin_y=r.ImGui_GetCursorPosY(c)
+    -- These values are frame-global. Querying the ImGui bridge for them in
+    -- every cell was pure repeated work and made a static grid CPU-heavy.
+    local frame_mouse_x=r.ImGui_GetMousePos(c)
+    local _,frame_shift,frame_alt=self:key_modifiers()
+    local frame_draw=r.ImGui_GetWindowDrawList(c)
+    local frame_window_x=r.ImGui_GetWindowPos(c)
+    local frame_window_width=r.ImGui_GetWindowSize(c)
+    local active_base_colors={C.step,C.beat}
+    local future_base_colors={blend_color(C.step,C.panel,.84),blend_color(C.beat,C.panel,.84)}
+    if first_row>1 then r.ImGui_SetCursorPosY(c,lane_origin_y+(first_row-1)*lane_row_height) end
+    for row_index=first_row,last_row do
+      local index=indices[row_index]
+      local lane_row_started=self.perf_detail_frame and self.host.time_precise() or false
       local pad,lane=app:pad(index),app:lane(index)
+      local sustain_owners=self:lane_sustain_owners(lane)
       local row_scroll=r.ImGui_GetScrollX and r.ImGui_GetScrollX(c) or 0
       r.ImGui_SetCursorPosX(c,8+row_scroll)
       local fixed_left=r.ImGui_GetCursorScreenPos(c)
@@ -2061,24 +2232,26 @@ function UI:sequence_grid(height)
         lane.division_num,lane.division_den=division[2],division[3];app:select_pad(index);app:mark_dirty(false)
       end
       local _,row_top=r.ImGui_GetItemRectMin(c);local _,row_bottom=r.ImGui_GetItemRectMax(c)
-      local window_x=r.ImGui_GetWindowPos(c);local window_width=r.ImGui_GetWindowSize(c)
       -- This clip exists to protect the fixed lane controls horizontally.
       -- Leave vertical AA fringe outside the item bounds so lower rounded
       -- corners are not cut at the row's exact bottom edge.
-      r.ImGui_PushClipRect(c,fixed_left+(GRID_STEP_X-8),row_top-4,window_x+window_width,row_bottom+4,true)
-      for step_index=1,lane.step_count do
+      r.ImGui_PushClipRect(c,fixed_left+(GRID_STEP_X-8),row_top-4,frame_window_x+frame_window_width,row_bottom+4,true)
+      local cells_started=self.perf_detail_frame and self.host.time_precise() or false
+      local active_first=math.max(1,first_visible_step)
+      local active_last=math.min(lane.step_count,last_visible_step)
+      for step_index=active_first,active_last do
         local step_content_x=GRID_STEP_X+(step_index-1)*GRID_CELL_STRIDE
         r.ImGui_SameLine(c,step_content_x)
         local step=lane.steps[step_index]
-        local sustain_owner=not step.enabled and note_owner_at(lane,step_index) or false
+        local sustain_owner=not step.enabled and sustain_owners[step_index] or false
         local alternate=math.floor((step_index-1)/4)%2==1
-        local base_color=alternate and C.beat or C.step
+        local base_color=active_base_colors[alternate and 2 or 1]
         local accented=step.enabled and step.accent==true
         -- Invisible input keeps step hover completely borderless. The cell is
         -- rendered explicitly so focus/navigation styling cannot leak in.
         r.ImGui_InvisibleButton(c,"##step"..index..":"..step_index,GRID_CELL_WIDTH,25)
         local clicked=r.ImGui_IsItemClicked and r.ImGui_IsItemClicked(c,0) or false
-        local cell_x1,cell_y1=r.ImGui_GetItemRectMin(c);local cell_x2,cell_y2=r.ImGui_GetItemRectMax(c);local draw=r.ImGui_GetWindowDrawList(c)
+        local cell_x1,cell_y1=r.ImGui_GetItemRectMin(c);local cell_x2,cell_y2=r.ImGui_GetItemRectMax(c);local draw=frame_draw
         add_rounded_rect(r,draw,cell_x1,cell_y1,cell_x2,cell_y2,base_color,4)
         if step.enabled or step.cut then
           local enabled_color=self.color_steps_by_pad and active_step_color(row_color,step.enabled and step.velocity or 100) or ((C.selected&0xFFFFFF00)|0xA0)
@@ -2108,14 +2281,12 @@ function UI:sequence_grid(height)
         local activated=has_activation and r.ImGui_IsItemActivated(c) or false
         local begin_paint=(has_activation and activated) or ((not has_activation) and clicked)
         local hovered=self:item_hovered_for_drag()
-        local mouse_x=r.ImGui_GetMousePos(c)
-        local origin_lane_x_hovered=self.paint_active and self.paint_lane==index and mouse_x>=cell_x1 and mouse_x<cell_x1+GRID_CELL_STRIDE
+        local origin_lane_x_hovered=self.paint_active and self.paint_lane==index and frame_mouse_x>=cell_x1 and frame_mouse_x<cell_x1+GRID_CELL_STRIDE
         local right_begin=hovered and r.ImGui_IsMouseClicked and r.ImGui_IsMouseClicked(c,1)
-        local ctrl,shift,alt=self:key_modifiers()
-        if begin_paint and shift then
+        if begin_paint and frame_shift then
           app:select_pad(index);app.selected_step=step_index;self.edit_focus="steps"
           step.cut=not step.cut;step.enabled=false;step.accent=false;step.pitch_semitones=0;step.pitch_cents=0;step.gate=100;app:mark_dirty(false)
-        elseif begin_paint and alt then
+        elseif begin_paint and frame_alt then
           app:select_pad(index);app.selected_step=step_index
           self.edit_focus="steps"
           self.paint_active=true;self.paint_button=0;self.paint_lane=index;self.paint_last_step=step_index
@@ -2151,42 +2322,33 @@ function UI:sequence_grid(height)
           r.ImGui_EndTooltip(c)
         end
       end
-      for step_index=lane.step_count+1,64 do
+      self:perf_end("sampled active step cells",cells_started)
+      cells_started=self.perf_detail_frame and self.host.time_precise() or false
+      local future_first=math.max(lane.step_count+1,first_visible_step)
+      local future_last=math.min(max_steps,last_visible_step)
+      for step_index=future_first,future_last do
         local step_content_x=GRID_STEP_X+(step_index-1)*GRID_CELL_STRIDE
         r.ImGui_SameLine(c,step_content_x)
         r.ImGui_InvisibleButton(c,"##future_step"..index..":"..step_index,GRID_CELL_WIDTH,25)
         local cell_x1,cell_y1=r.ImGui_GetItemRectMin(c);local cell_x2,cell_y2=r.ImGui_GetItemRectMax(c)
         local alternate=math.floor((step_index-1)/4)%2==1
-        local base_color=alternate and C.beat or C.step
-        local dim_color=blend_color(base_color,C.panel,.84)
-        local future_draw=r.ImGui_GetWindowDrawList(c)
+        local dim_color=future_base_colors[alternate and 2 or 1]
+        local future_draw=frame_draw
         add_rounded_rect(r,future_draw,cell_x1,cell_y1,cell_x2,cell_y2,dim_color,4)
         r.ImGui_DrawList_AddRect(future_draw,cell_x1+.5,cell_y1+.5,cell_x2-.5,cell_y2-.5,(C.border&0xFFFFFF00)|0x28,3,0,1)
         if r.ImGui_IsItemHovered(c) then self:tooltip(string.format("Step %d — increase this lane's step count to activate",step_index)) end
       end
+      self:perf_end("sampled future step cells",cells_started)
       r.ImGui_PopClipRect(c)
+      self:perf_end("sampled lane row",lane_row_started)
     end
-    -- A keyboard selection alone must not manufacture a visible lane. Empty
-    -- sequencer space is the explicit target for adding samples/lanes.
-    local drop_index=nil
-    local selected_pad,selected_lane=app:pad(app.selected_pad),app:lane(app.selected_pad)
-    local selected_active=selected_pad.sample~=false
-    if not selected_active then for _,step in ipairs(selected_lane.steps) do if step.enabled then selected_active=true;break end end end
-    if not selected_active then drop_index=app.selected_pad else
-      for index=1,#app.rack.pads do
-        local candidate,candidate_lane=app:pad(index),app:lane(index);local active=candidate.sample~=false
-        if not active then for _,step in ipairs(candidate_lane.steps) do if step.enabled or step.cut then active=true;break end end end
-        if not active then drop_index=index;break end
-      end
-    end
-    if drop_index then
-      r.ImGui_SetCursorPosX(c,8+(r.ImGui_GetScrollX and r.ImGui_GetScrollX(c) or 0))
-      local blank_width,blank_height=r.ImGui_GetContentRegionAvail(c);blank_height=math.max(32,blank_height)
-      r.ImGui_InvisibleButton(c,"##blank_lane_drop",math.max(320,blank_width),blank_height)
-      local left,top=r.ImGui_GetItemRectMin(c)
-      r.ImGui_DrawList_AddText(r.ImGui_GetWindowDrawList(c),left+12,top+10,C.muted,"Drop samples here to add lanes")
-      self:accept_sample_drop(drop_index)
-    end
+    -- Advance layout to the end of the virtual lane list. SetNextWindowContentSize
+    -- preserves both scrollbar ranges without submitting the skipped widgets.
+    r.ImGui_SetCursorPosY(c,lane_origin_y+#indices*lane_row_height)
+    -- Dear ImGui requires an actual item after SetCursorPos extends a child
+    -- boundary, even when SetNextWindowContentSize already declares it.
+    r.ImGui_SetCursorPosX(c,r.ImGui_SetNextWindowContentSize and 8 or virtual_width-1)
+    r.ImGui_Dummy(c,1,1)
     if self.paint_active and not r.ImGui_IsMouseDown(c,self.paint_button) then self.paint_active=false;self.paint_lane=false;self.paint_last_step=false;self.paint_accent=false end
     if app.follow_cursor then
       local followed=self:lane_play_step(app:lane())
@@ -2218,44 +2380,92 @@ function UI:sample_waveform_points(path,defer_analysis)
   local r=self.host
   local points=self.waveform_cache[path or ""]
   if not points and defer_analysis and type(path)=="string" and path~="" then
+    local failure=self.waveform_failures[path]
+    if type(failure)=="table" and (r.time_precise and r.time_precise() or 0)<(failure.retry_at or 0) then return nil end
     if not self.waveform_queue_set[path] then
       self.waveform_queue[#self.waveform_queue+1]=path;self.waveform_queue_set[path]=true
     end
     return nil
   end
   if not points then
-    points={}
-    if path and path~="" and r.PCM_Source_CreateFromFile and r.new_array then
-      local source=r.PCM_Source_CreateFromFile(path)
-      if source then
-        local count=128
-        local buffer=r.new_array(count*2)
-        local length=r.GetMediaSourceLength(source) or 1
-        local packed=r.PCM_Source_GetPeaks(source,count/math.max(length,0.001),0,1,count,0,buffer)
-        local got=(packed or 0)&0xFFFFF
-        local values=buffer.table and buffer.table(1,count*2) or {}
-        for i=1,count do
-          local peak=math.abs(values[i] or 0)
-          local trough=math.abs(values[count+i] or peak)
-          points[i]=math.max(peak,trough)
-        end
-        if r.PCM_Source_Destroy then r.PCM_Source_Destroy(source) end
-        if got==0 then points={} end
-      end
-    end
-    if #points==0 then
-      for i=1,128 do points[i]=path and (0.72*math.exp(-i/46)*(0.35+0.65*math.abs(math.sin(i*0.47)))) or 0 end
-    end
-    self.waveform_cache[path or ""]=points
+    self:step_waveform_job(path)
+    points=self.waveform_cache[path or ""]
   end
   return points
+end
+
+function UI:step_waveform_job(path)
+  local r=self.host
+  if type(path)~="string" or path=="" or not (r.PCM_Source_CreateFromFile and r.PCM_Source_GetPeaks and r.new_array) then return false end
+  local function fail(reason,source)
+    local prior=self.waveform_failures[path];local attempts=type(prior)=="table" and (prior.attempts or 0)+1 or 1
+    local now=r.time_precise and r.time_precise() or 0
+    self.waveform_failures[path]={reason=reason,attempts=attempts,retry_at=now+math.min(30,2^attempts)}
+    if source and r.PCM_Source_Destroy then r.PCM_Source_Destroy(source) end
+    self.waveform_jobs[path]=nil
+    return false
+  end
+  local job=self.waveform_jobs[path]
+  if not job then
+    local source=r.PCM_Source_CreateFromFile(path)
+    if not source then return fail("open_failed") end
+    local duration=math.max(.001,r.GetMediaSourceLength(source) or 1)
+    local channels=math.max(1,math.floor((r.GetMediaSourceNumChannels and r.GetMediaSourceNumChannels(source)) or 1))
+    -- Keep enough cached source detail for useful editing at the maximum
+    -- waveform zoom. This remains a one-time peak extraction, never per-frame
+    -- audio decoding.
+    job={source=source,duration=duration,channels=channels,count=WAVEFORM_PEAK_COUNT,building=false}
+    self.waveform_jobs[path]=job
+  end
+  local function extract()
+    local count,channels=job.count,job.channels
+    local buffer=r.new_array(count*channels*2)
+    local packed=r.PCM_Source_GetPeaks(job.source,count/job.duration,0,channels,count,0,buffer)
+    local got=(packed or 0)&0xFFFFF
+    if got<=0 then return false end
+    local values=buffer.table and buffer.table(1,count*channels*2) or {}
+    local result={}
+    local minimum_base=count*channels
+    for sample=1,got do
+      local amplitude=0;local sample_base=(sample-1)*channels
+      for channel=1,channels do
+        local maximum=values[sample_base+channel] or 0
+        local minimum=values[minimum_base+sample_base+channel] or 0
+        amplitude=math.max(amplitude,math.abs(maximum),math.abs(minimum))
+      end
+      result[sample]=amplitude
+    end
+    self.waveform_cache[path]=result;self.waveform_duration[path]=job.duration;self.waveform_failures[path]=nil
+    if r.PCM_Source_Destroy then r.PCM_Source_Destroy(job.source) end
+    self.waveform_jobs[path]=nil
+    return true
+  end
+  if extract() then return true end
+  if not r.PCM_Source_BuildPeaks then
+    return fail("peaks_unavailable",job.source)
+  end
+  if not job.building then
+    local remaining=r.PCM_Source_BuildPeaks(job.source,0) or 0
+    if remaining==0 then
+      if extract() then return true end
+      return fail("no_peak_data",job.source)
+    end
+    job.building=true;return nil
+  end
+  local remaining=r.PCM_Source_BuildPeaks(job.source,1) or 0
+  if remaining~=0 then return nil end
+  r.PCM_Source_BuildPeaks(job.source,2)
+  if extract() then return true end
+  return fail("build_produced_no_data",job.source)
 end
 
 function UI:process_waveform_queue(limit)
   local processed=0
   while processed<(limit or 1) and #self.waveform_queue>0 do
     local path=table.remove(self.waveform_queue,1);self.waveform_queue_set[path]=nil
-    self:sample_waveform_points(path,false);processed=processed+1
+    local complete=self:step_waveform_job(path)
+    if complete==nil and not self.waveform_queue_set[path] then self.waveform_queue[#self.waveform_queue+1]=path;self.waveform_queue_set[path]=true end
+    processed=processed+1
   end
   return processed
 end
@@ -2303,44 +2513,68 @@ function UI:waveform(path,width,height,start_pos,end_pos,id,envelope)
   local points=self:sample_waveform_points(path,true) or {}
   local mid=y+height/2
   r.ImGui_DrawList_AddLine(draw,x,mid,x+width,mid,C.border,1)
-  for i=1,#points do
-    local px=x+(i-1)*width/(#points-1)
-    local display_gain=math.max(0,math.min(4,((tonumber(envelope.volume)or .5)/.5)^2))
-    local amp=math.min(1,(points[i] or 0)*display_gain)*(height*0.44)
+  local display_gain=math.max(0,math.min(4,((tonumber(envelope.volume)or .5)/.5)^2))
+  local visible_first,visible_last=1,#points
+  local visible_count=math.max(0,visible_last-visible_first+1)
+  local columns=math.min(math.max(1,math.floor(width)),visible_count)
+  for column=0,columns-1 do
+    local bucket_first=visible_first+math.floor(column*visible_count/columns)
+    local bucket_last=math.min(visible_last,visible_first+math.floor((column+1)*visible_count/columns)-1)
+    local peak=0
+    for point_index=bucket_first,bucket_last do peak=math.max(peak,points[point_index] or 0) end
+    local px=x+(column+.5)*width/columns
+    local amp=math.min(1,peak*display_gain)*(height*0.44)
     r.ImGui_DrawList_AddLine(draw,px,mid-amp,px,mid+amp,C.waveform,1)
   end
   local sx,ex=x+start_pos*width,x+end_pos*width
   if sx>x then r.ImGui_DrawList_AddRectFilled(draw,x,y,sx,y+height,trim_color,4) end
   if ex<x+width then r.ImGui_DrawList_AddRectFilled(draw,ex,y,x+width,y+height,trim_color,4) end
-  local start_color,end_color=C.red,C.red
+  local trim_active=self.wave_drag=="start" or self.wave_drag=="end"
+  local start_color,end_color=(C.red&0xFFFFFF00)|(trim_active and 0xFF or 0xB8),(C.red&0xFFFFFF00)|(trim_active and 0xFF or 0xB8)
   r.ImGui_DrawList_AddLine(draw,sx,y,sx,y+height,start_color,2)
   r.ImGui_DrawList_AddLine(draw,ex,y,ex,y+height,end_color,2)
   local span=math.max(1,ex-sx);local top_y=y+9;local bottom_y=y+height-9;local sustain_y=bottom_y-sustain*(bottom_y-top_y)
-  local attack_decay_gap=math.min(14,span/3);local decay_release_gap=math.min(8,span/3)
-  local release_x=math.max(sx+attack_decay_gap+decay_release_gap,math.min(ex,ex-span*.32*release))
-  local attack_x=math.max(sx,math.min(release_x-attack_decay_gap-decay_release_gap,sx+span*.30*attack))
-  local decay_x=math.max(attack_x+attack_decay_gap,math.min(release_x-decay_release_gap,attack_x+attack_decay_gap+span*.30*decay))
-  local sustain_x=decay_x+(release_x-decay_x)*.55
-  local envelope_color=C.value_marker or C.accent
+  local source_duration=math.max(.001,(self.waveform_duration and self.waveform_duration[path or ""]) or 1)
+  local trimmed_duration=math.max(.001,source_duration*math.max(.001,end_pos-start_pos))
+  local transpose,cents
+  if envelope.transpose_semitones~=nil or envelope.tune_cents~=nil then
+    transpose=tonumber(envelope.transpose_semitones) or 0;cents=tonumber(envelope.tune_cents) or 0
+  else
+    local total=((tonumber(envelope.pitch) or DEFAULTS.pitch)-.5)*160
+    transpose=math.floor(total+(total>=0 and .5 or -.5));cents=(total-transpose)*100
+  end
+  local playback_rate=math.max(.000001,2^((transpose+cents/100)/12))
+  local attack_seconds=envelope_math.time_seconds(attack,envelope_math.ATTACK_MAX_SECONDS)
+  local decay_seconds=envelope_math.time_seconds(decay,envelope_math.DECAY_MAX_SECONDS)
+  local attack_x=math.min(ex,sx+span*math.min(1,attack_seconds*playback_rate/trimmed_duration))
+  local decay_x=math.min(ex,attack_x+span*math.min(1,(decay_seconds*playback_rate)/trimmed_duration))
+  local sustain_x=decay_x+(ex-decay_x)*.55
+  local envelope_active=self.wave_drag=="attack" or self.wave_drag=="decay" or self.wave_drag=="sustain"
+  local envelope_base=C.value_marker or C.accent
+  local envelope_color=(envelope_base&0xFFFFFF00)|(envelope_active and 0xFF or 0x94)
+  local envelope_width=envelope_active and 2.0 or 1.25
   local function envelope_handle(px,py,label,align)
-    r.ImGui_DrawList_AddCircleFilled(draw,px,py,5,C.border,12)
-    r.ImGui_DrawList_AddCircleFilled(draw,px,py,3.5,envelope_color,12)
+    r.ImGui_DrawList_AddCircleFilled(draw,px,py,4.5,(C.border&0xFFFFFF00)|(envelope_active and 0xFF or 0xA8),12)
+    r.ImGui_DrawList_AddCircleFilled(draw,px,py,3,envelope_color,12)
     local text_width=r.ImGui_CalcTextSize(c,label);local tx=align=="left" and px-text_width-8 or px+8;local ty=py+6
     r.ImGui_DrawList_AddRectFilled(draw,tx-3,ty-2,tx+text_width+3,ty+13,(C.panel&0xFFFFFF00)|0xEC,3)
     r.ImGui_DrawList_AddText(draw,tx,ty,C.text,label)
   end
   if show_adsr then
-    r.ImGui_DrawList_AddLine(draw,sx,bottom_y,attack_x,top_y,envelope_color,1.7)
-    r.ImGui_DrawList_AddLine(draw,attack_x,top_y,decay_x,sustain_y,envelope_color,1.7)
-    r.ImGui_DrawList_AddLine(draw,decay_x,sustain_y,release_x,sustain_y,envelope_color,1.7)
-    r.ImGui_DrawList_AddLine(draw,release_x,sustain_y,ex,bottom_y,envelope_color,1.7)
+    r.ImGui_DrawList_AddLine(draw,sx,bottom_y,attack_x,top_y,envelope_color,envelope_width)
+    r.ImGui_DrawList_AddLine(draw,attack_x,top_y,decay_x,sustain_y,envelope_color,envelope_width)
+    r.ImGui_DrawList_AddLine(draw,decay_x,sustain_y,ex,sustain_y,(envelope_base&0xFFFFFF00)|(envelope_active and 0xE8 or 0x70),envelope_active and 1.8 or 1.0)
     envelope_handle(attack_x,top_y,"A","right")
     envelope_handle(decay_x,sustain_y,"D","right")
     envelope_handle(sustain_x,sustain_y,"S",sustain_x>x+width*.8 and "left" or "right")
-    envelope_handle(release_x,sustain_y,"R",release_x>x+width*.82 and "left" or "right")
   end
-  local fi_x=sx+(ex-sx)*fade_in;local fo_x=ex-(ex-sx)*fade_out
-  local fade_color=0x2DAA62FF
+  local fade_in_seconds=envelope_math.time_seconds(fade_in,envelope_math.FADE_MAX_SECONDS)
+  local fade_out_seconds=envelope_math.time_seconds(fade_out,envelope_math.FADE_MAX_SECONDS)
+  local fi_x=sx+span*math.min(1,fade_in_seconds/trimmed_duration)
+  local fo_x=ex-span*math.min(1,fade_out_seconds/trimmed_duration)
+  local fade_active=self.wave_drag=="fade_in" or self.wave_drag=="fade_out" or self.wave_drag=="fade_in_curve" or self.wave_drag=="fade_out_curve"
+  local fade_color=0x2DAA6200|(fade_active and 0xF0 or 0x88)
+  local fade_fill=0x2DAA6218
   local fade_top=y+12
   local fi_mid_x=(sx+fi_x)*.5;local fo_mid_x=(fo_x+ex)*.5
   local fi_mid_y=bottom_y-(bottom_y-fade_top)*fade_in_curve
@@ -2349,11 +2583,13 @@ function UI:waveform(path,width,height,start_pos,end_pos,id,envelope)
     local a=1-t
     return a*a*x0+2*a*t*xc+t*t*x1,a*a*y0+2*a*t*yc+t*t*y1
   end
+  if fade_in>0 then r.ImGui_DrawList_AddRectFilled(draw,sx,y,fi_x,y+height,fade_fill,0) end
+  if fade_out>0 then r.ImGui_DrawList_AddRectFilled(draw,fo_x,y,ex,y+height,fade_fill,0) end
   if fade_in>0 then
     local previous_x,previous_y=sx,bottom_y
     for segment=1,8 do
       local px,py=curve_point(sx,bottom_y,fi_mid_x,fi_mid_y,fi_x,fade_top,segment/8)
-      r.ImGui_DrawList_AddLine(draw,previous_x,previous_y,px,py,fade_color,2)
+      r.ImGui_DrawList_AddLine(draw,previous_x,previous_y,px,py,fade_color,fade_active and 2 or 1.25)
       previous_x,previous_y=px,py
     end
   end
@@ -2361,20 +2597,21 @@ function UI:waveform(path,width,height,start_pos,end_pos,id,envelope)
     local previous_x,previous_y=fo_x,fade_top
     for segment=1,8 do
       local px,py=curve_point(fo_x,fade_top,fo_mid_x,fo_mid_y,ex,bottom_y,segment/8)
-      r.ImGui_DrawList_AddLine(draw,previous_x,previous_y,px,py,fade_color,2)
+      r.ImGui_DrawList_AddLine(draw,previous_x,previous_y,px,py,fade_color,fade_active and 2 or 1.25)
       previous_x,previous_y=px,py
     end
   end
   if r.ImGui_DrawList_AddTriangleFilled then
-    r.ImGui_DrawList_AddTriangleFilled(draw,sx,y+height-1,sx+12,y+height-1,sx,y+height-13,C.red)
-    r.ImGui_DrawList_AddTriangleFilled(draw,ex,y+height-1,ex-12,y+height-1,ex,y+height-13,C.red)
+    local trim_handle=(C.red&0xFFFFFF00)|(trim_active and 0xFF or 0xC0)
+    r.ImGui_DrawList_AddTriangleFilled(draw,sx,y+height-1,sx+9,y+height-1,sx,y+height-10,trim_handle)
+    r.ImGui_DrawList_AddTriangleFilled(draw,ex,y+height-1,ex-9,y+height-1,ex,y+height-10,trim_handle)
     -- Fade handles stay visible even at zero so the feature is discoverable.
     -- They sit on the top edge, while the green/red bottom triangles remain
     -- the trim handles.
     local fade_ink=fade_color
     local fade_out_ink=fade_color
-    r.ImGui_DrawList_AddTriangleFilled(draw,fi_x,y+1,fi_x+10,y+1,fi_x,y+11,fade_ink)
-    r.ImGui_DrawList_AddTriangleFilled(draw,fo_x,y+1,fo_x-10,y+1,fo_x,y+11,fade_out_ink)
+    r.ImGui_DrawList_AddTriangleFilled(draw,fi_x,y+1,fi_x+8,y+1,fi_x,y+9,fade_ink)
+    r.ImGui_DrawList_AddTriangleFilled(draw,fo_x,y+1,fo_x-8,y+1,fo_x,y+9,fade_out_ink)
     if fade_in>0 then r.ImGui_DrawList_AddCircleFilled(draw,fi_mid_x,fi_mid_y,4,fade_color,12) end
     if fade_out>0 then r.ImGui_DrawList_AddCircleFilled(draw,fo_mid_x,fo_mid_y,4,fade_color,12) end
   end
@@ -2384,7 +2621,7 @@ function UI:waveform(path,width,height,start_pos,end_pos,id,envelope)
   if fade_out>0 then candidates[#candidates+1]={"fade_out_curve",fo_mid_x,fo_mid_y} end
   if show_adsr then
     candidates[#candidates+1]={"attack",attack_x,top_y};candidates[#candidates+1]={"decay",decay_x,sustain_y}
-    candidates[#candidates+1]={"sustain",sustain_x,sustain_y};candidates[#candidates+1]={"release",release_x,sustain_y}
+    candidates[#candidates+1]={"sustain",sustain_x,sustain_y}
   end
   local function nearest_handle()
     local mx,my=r.ImGui_GetMousePos(c);local nearest,distance="start",math.huge
@@ -2397,23 +2634,28 @@ function UI:waveform(path,width,height,start_pos,end_pos,id,envelope)
   local changed=false
   if r.ImGui_IsItemHovered(c) and r.ImGui_IsMouseClicked and r.ImGui_IsMouseClicked(c,1) then
     local target=nearest_handle()
-    if target=="start" then start_pos=0 elseif target=="end" then end_pos=1 elseif target=="fade_in" then fade_in=0 elseif target=="fade_out" then fade_out=0 elseif target=="fade_in_curve" then fade_in_curve=DEFAULTS.fade_in_curve elseif target=="fade_out_curve" then fade_out_curve=DEFAULTS.fade_out_curve elseif target=="attack" then attack=DEFAULTS.attack elseif target=="decay" then decay=DEFAULTS.decay elseif target=="sustain" then sustain=DEFAULTS.sustain elseif target=="release" then release=DEFAULTS.release end
+    if target=="start" then start_pos=0 elseif target=="end" then end_pos=1 elseif target=="fade_in" then fade_in=0 elseif target=="fade_out" then fade_out=0 elseif target=="fade_in_curve" then fade_in_curve=DEFAULTS.fade_in_curve elseif target=="fade_out_curve" then fade_out_curve=DEFAULTS.fade_out_curve elseif target=="attack" then attack=DEFAULTS.attack elseif target=="decay" then decay=DEFAULTS.decay elseif target=="sustain" then sustain=DEFAULTS.sustain end
     changed=true
   end
   if r.ImGui_IsItemActive(c) and self.wave_drag then
     local mx,my=r.ImGui_GetMousePos(c);local point=math.max(0,math.min(1,(mx-x)/width))
     if self.wave_drag=="start" then local value=math.min(point,end_pos-.001);changed=value~=start_pos;start_pos=value
     elseif self.wave_drag=="end" then local value=math.max(point,start_pos+.001);changed=value~=end_pos;end_pos=value
-    elseif self.wave_drag=="fade_in" then local value=math.max(0,math.min(.5,(point-start_pos)/math.max(.001,end_pos-start_pos)));changed=value~=fade_in;fade_in=value
-    elseif self.wave_drag=="fade_out" then local value=math.max(0,math.min(.5,(end_pos-point)/math.max(.001,end_pos-start_pos)));changed=value~=fade_out;fade_out=value
+    elseif self.wave_drag=="fade_in" then local seconds=math.max(0,math.min(envelope_math.FADE_MAX_SECONDS,(point-start_pos)/math.max(.001,end_pos-start_pos)*trimmed_duration));local value=envelope_math.time_control(seconds,envelope_math.FADE_MAX_SECONDS);changed=value~=fade_in;fade_in=value
+    elseif self.wave_drag=="fade_out" then local seconds=math.max(0,math.min(envelope_math.FADE_MAX_SECONDS,(end_pos-point)/math.max(.001,end_pos-start_pos)*trimmed_duration));local value=envelope_math.time_control(seconds,envelope_math.FADE_MAX_SECONDS);changed=value~=fade_out;fade_out=value
     elseif self.wave_drag=="fade_in_curve" then local value=math.max(0,math.min(1,1-(my-fade_top)/math.max(1,mid-fade_top)));changed=value~=fade_in_curve;fade_in_curve=value
     elseif self.wave_drag=="fade_out_curve" then local value=math.max(0,math.min(1,1-(my-fade_top)/math.max(1,mid-fade_top)));changed=value~=fade_out_curve;fade_out_curve=value
-    elseif self.wave_drag=="attack" then local clamped=math.max(sx,math.min(decay_x-attack_decay_gap,mx));local value=math.max(0,math.min(1,(clamped-sx)/(span*.30)));changed=value~=attack;attack=value
-    elseif self.wave_drag=="decay" then local clamped=math.max(attack_x+attack_decay_gap,math.min(release_x-decay_release_gap,mx));local value=math.max(0,math.min(1,(clamped-attack_x-attack_decay_gap)/(span*.30)));changed=value~=decay;decay=value
-    elseif self.wave_drag=="sustain" then local value=math.max(0,math.min(1,1-(my-top_y)/math.max(1,bottom_y-top_y)));changed=value~=sustain;sustain=value
-    elseif self.wave_drag=="release" then local clamped=math.max(decay_x+decay_release_gap,math.min(ex,mx));local value=math.max(0,math.min(1,(ex-clamped)/(span*.32)));changed=value~=release;release=value end
+    elseif self.wave_drag=="attack" then local clamped=math.max(sx,math.min(ex,mx));local seconds=(clamped-sx)/span*trimmed_duration/playback_rate;local value=envelope_math.time_control(seconds,envelope_math.ATTACK_MAX_SECONDS);changed=value~=attack;attack=value
+    elseif self.wave_drag=="decay" then local clamped=math.max(attack_x,math.min(ex,mx));local seconds=(clamped-attack_x)/span*trimmed_duration/playback_rate;local value=envelope_math.time_control(seconds,envelope_math.DECAY_MAX_SECONDS);changed=value~=decay;decay=value
+    elseif self.wave_drag=="sustain" then local value=math.max(0,math.min(1,1-(my-top_y)/math.max(1,bottom_y-top_y)));changed=value~=sustain;sustain=value end
   elseif not r.ImGui_IsMouseDown(c,0) then self.wave_drag=nil end
-  self:tooltip(show_adsr and "Drag Start/End, fade triangles, or A/D/S/R handles\nRight-click the nearest handle to reset it" or "Drag Start, End, or the small fade triangles\nRight-click the nearest handle to reset it")
+  local fade_summary=string.format("Fade In %s   Fade Out %s",
+    envelope_math.format_time(envelope_math.time_seconds(fade_in,envelope_math.FADE_MAX_SECONDS)),
+    envelope_math.format_time(envelope_math.time_seconds(fade_out,envelope_math.FADE_MAX_SECONDS)))
+  local tooltip=show_adsr and string.format("Drag Start/End, fade triangles, or A/D/S handles\nA %s   D %s   S %s   R %s (generic)\n%s\nRight-click the nearest handle to reset it",
+    envelope_value_text("attack",attack),envelope_value_text("decay",decay),envelope_value_text("sustain",sustain),envelope_value_text("release",release),fade_summary)
+    or "Drag Start, End, or the small fade triangles\n"..fade_summary.."\nRight-click the nearest handle to reset it"
+  self:tooltip(tooltip)
   return changed,start_pos,end_pos,attack,decay,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve
 end
 
@@ -2423,7 +2665,7 @@ function UI:sampler_controls()
   local path=type(pad.sample)=="table" and pad.sample.path or pad.sample
   local avail=r.ImGui_GetContentRegionAvail(c)
   local trim_changed,trim_start,trim_end,attack,decay,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve=self:waveform(path,avail,108,controls.sample_start or DEFAULTS.sample_start,controls.sample_end or DEFAULTS.sample_end,"##inspector_waveform",controls)
-  if trim_changed then controls.sample_start,controls.sample_end,controls.attack,controls.decay,controls.sustain,controls.release,controls.fade_in,controls.fade_out,controls.fade_in_curve,controls.fade_out_curve=trim_start,trim_end,attack,decay,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve;app:queue_pad_controls(nil,true) end
+  if trim_changed then controls.sample_start,controls.sample_end,controls.attack,controls.decay,controls.sustain,controls.release,controls.fade_in,controls.fade_out,controls.fade_in_curve,controls.fade_out_curve=trim_start,trim_end,attack,decay,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve;self:queue_live_pad_controls() end
   r.ImGui_Text(c,state.sample_label(pad))
   r.ImGui_SameLine(c);if self:icon_button("##wave_previous","previous","Previous sample",27,24) then app:cycle_sample(-1) end
   r.ImGui_SameLine(c);if self:icon_button("##wave_next","next","Next sample",27,24) then app:cycle_sample(1) end
@@ -2434,19 +2676,35 @@ function UI:sampler_controls()
   r.ImGui_SameLine(c);if self:icon_button("##wave_reset","reset","Reset sample controls",27,24) then app:reset_pad_controls() end
   r.ImGui_Separator(c)
   local fields={
-    {"GAIN","volume",0,1,.01},{"PAN","pan",0,1,.01},{"TUNE","pitch",0,1,.01},
-    {"START","sample_start",0,1,.005},{"END","sample_end",0,1,.005},
-    {"ATTACK","attack",0,1,.005},{"DECAY","decay",0,1,.005},{"SUSTAIN","sustain",0,1,.005},{"RELEASE","release",0,1,.005},
-    {"FADE IN","fade_in",0,1,.005},{"FADE OUT","fade_out",0,1,.005},
+    {label="GAIN",key="volume",minimum=0,maximum=1,step=.01},{label="PAN",key="pan",minimum=0,maximum=1,step=.01},{label="TUNE",key="pitch",minimum=0,maximum=1,step=.01},
+    {label="START",key="sample_start",minimum=0,maximum=1,step=.005},{label="END",key="sample_end",minimum=0,maximum=1,step=.005},
+    {label="ATTACK",key="attack",time_max=envelope.ATTACK_MAX_SECONDS,step_ms=1},
+    {label="DECAY",key="decay",time_max=envelope.DECAY_MAX_SECONDS,step_ms=10},
+    {label="SUSTAIN",key="sustain",sustain_db=true},
+    {label="RELEASE",key="release",time_max=envelope.RELEASE_MAX_SECONDS,step_ms=1},
+    {label="FADE IN",key="fade_in",time_max=envelope.FADE_MAX_SECONDS,step_ms=1},
+    {label="FADE OUT",key="fade_out",time_max=envelope.FADE_MAX_SECONDS,step_ms=1},
   }
   local field_width=math.max(72,math.min(112,(avail-12)/4))
   for index,f in ipairs(fields) do
     if index>1 and (index-1)%4~=0 then r.ImGui_SameLine(c) end
     r.ImGui_BeginGroup(c)
-    r.ImGui_TextDisabled(c,f[1])
-    local current=controls[f[2]]; if current==nil then current=DEFAULTS[f[2]] end
-    local changed,value=self:double_field("##wave_"..f[2],current,f[3],f[4],f[5],"%.3f",field_width)
-    if changed then controls[f[2]]=value; app:queue_pad_controls(nil,true) end
+    r.ImGui_TextDisabled(c,f.label)
+    local current=controls[f.key]; if current==nil then current=DEFAULTS[f.key] end
+    local changed,value
+    if f.time_max then
+      local milliseconds=envelope.time_seconds(current,f.time_max)*1000
+      changed,value=self:double_field("##wave_"..f.key,milliseconds,0,f.time_max*1000,f.step_ms,"%.1f ms",field_width)
+      if changed then controls[f.key]=envelope.time_control(value/1000,f.time_max) end
+    elseif f.sustain_db then
+      local db=envelope.sustain_db(current);if db==-math.huge then db=envelope.SUSTAIN_FLOOR_DB end
+      changed,value=self:double_field("##wave_"..f.key,db,envelope.SUSTAIN_FLOOR_DB,0,.5,"%.1f dB",field_width)
+      if changed then controls[f.key]=envelope.sustain_from_db(value) end
+    else
+      changed,value=self:double_field("##wave_"..f.key,current,f.minimum,f.maximum,f.step,"%.3f",field_width)
+      if changed then controls[f.key]=value end
+    end
+    if changed then self:queue_live_pad_controls() end
     r.ImGui_EndGroup(c)
   end
   r.ImGui_Separator(c)
@@ -2532,7 +2790,11 @@ function UI:pads()
   -- flowing after the sound controls, which keeps the row stable at narrow
   -- widths.  Its text label is intentionally omitted.
   local choke_x=control_row_right-utility_width-6-62
-  r.ImGui_SetCursorPosX(c,math.max(control_row_x+compact_size*3+send_size+24,choke_x))
+  -- Include both send knobs and every explicit SameLine gap in the left-hand
+  -- boundary. The old estimate counted only one send knob, so a scrollbar's
+  -- reduced content width allowed the choke combo to move over send B.
+  local sound_controls_right=control_row_x+compact_size*3+6*2+5+send_size*2+3
+  r.ImGui_SetCursorPosX(c,math.max(sound_controls_right+5,choke_x))
   r.ImGui_SetCursorPosY(c,control_row_y)
   changed,value=self:combo_field("##padquickchoke",choke,table.concat(choke_labels,"\0").."\0",#choke_labels,62)
   if changed then
@@ -2675,27 +2937,44 @@ function UI:pads()
      -- adding a full extra line of vertical padding.
      local _,playback_bottom_screen=r.ImGui_GetItemRectMax(c)
      local _,window_screen_y=r.ImGui_GetWindowPos(c)
-     local knob_row_y=playback_bottom_screen-window_screen_y+4
+     -- Cursor positions are content coordinates, while item/window positions
+     -- above are screen coordinates. Restore the child scroll offset so the
+     -- knob row remains below PLAYBACK when a condensed inspector is scrolled.
+     local scroll_y=r.ImGui_GetScrollY and r.ImGui_GetScrollY(c) or 0
+     local knob_row_y=playback_bottom_screen-window_screen_y+scroll_y+4
+     -- Use the same audible timeline as the waveform: source duration after
+     -- trim, divided by the pitch playback rate. Knob travel therefore never
+     -- extends into time that cannot occur for the selected sample.
+     local source_duration=math.max(.001,(self.waveform_duration and self.waveform_duration[path or ""]) or 1)
+     local trim_start=math.max(0,math.min(1,tonumber(controls.sample_start) or DEFAULTS.sample_start))
+     local trim_end=math.max(trim_start,math.min(1,tonumber(controls.sample_end) or DEFAULTS.sample_end))
+     local duration_transpose,duration_cents=pad_pitch_values(controls)
+     local playback_rate=math.max(.000001,2^((duration_transpose+duration_cents/100)/12))
+     local playable_duration=math.max(.001,source_duration*math.max(.001,trim_end-trim_start)/playback_rate)
+     local attack_seconds=envelope.time_seconds(tonumber(controls.attack) or DEFAULTS.attack,envelope.ATTACK_MAX_SECONDS)
+     local attack_limit=envelope.time_control(math.min(envelope.ATTACK_MAX_SECONDS,playable_duration),envelope.ATTACK_MAX_SECONDS)
+     local decay_limit=envelope.time_control(math.min(envelope.DECAY_MAX_SECONDS,math.max(0,playable_duration-attack_seconds)),envelope.DECAY_MAX_SECONDS)
+     local release_limit=envelope.time_control(math.min(envelope.RELEASE_MAX_SECONDS,playable_duration),envelope.RELEASE_MAX_SECONDS)
+     local gate_release_limit=envelope.time_control(math.min(envelope.GATE_RELEASE_MAX_SECONDS,playable_duration),envelope.GATE_RELEASE_MAX_SECONDS)
      local engine_knobs={
-      {id="glide_ms",label="GLIDE",value=(tonumber(controls.glide) or 0)*1000,default=0,min=0,max=500,step=5,
-        format=function(v)return v<=0 and "OFF" or string.format("%.0f ms",v)end,store=function(target,v)target.glide=v/1000;if v>0 then target.playback_mode="gate" end end},
-      {id="slide_xfade",label="XFADE",value=tonumber(controls.slide_crossfade_ms) or 20,default=20,min=0,max=100,step=1,
-        format=function(v)return string.format("%.0f ms",v)end,store=function(target,v)target.slide_crossfade_ms=v end},
-      {id="gate_release",label="GATE REL",value=tonumber(controls.gate_release_ms) or 10,default=10,min=0,max=2000,step=1,
-        format=function(v)return string.format("%.0f ms",v)end,store=function(target,v)target.gate_release_ms=v end},
-      {id="fade_in_ms",label="FADE IN",value=(tonumber(controls.fade_in) or 0)*100,default=0,min=0,max=100,step=1,
-        format=function(v)return string.format("%.0f ms",v)end,store=function(target,v)target.fade_in=v/100 end},
-      {id="fade_out_ms",label="FADE OUT",value=(tonumber(controls.fade_out) or 0)*100,default=0,min=0,max=100,step=1,
-        format=function(v)return string.format("%.0f ms",v)end,store=function(target,v)target.fade_out=v/100 end},
+      {id="gate_release",label="GREL",value=math.min(gate_release_limit,envelope.time_control((tonumber(controls.gate_release_ms) or 10)/1000,envelope.GATE_RELEASE_MAX_SECONDS)),default=math.min(gate_release_limit,envelope.time_control(.01,envelope.GATE_RELEASE_MAX_SECONDS)),min=0,max=gate_release_limit,step=.01,
+        format=function(v)return envelope.format_time(envelope.time_seconds(v,envelope.GATE_RELEASE_MAX_SECONDS))end,
+        store=function(target,v)target.gate_release_ms=envelope.time_seconds(v,envelope.GATE_RELEASE_MAX_SECONDS)*1000 end},
+      {id="attack",label="A",value=math.min(attack_limit,tonumber(controls.attack) or DEFAULTS.attack),default=math.min(attack_limit,DEFAULTS.attack),min=0,max=attack_limit,step=.01,
+        format=function(v)return envelope_value_text("attack",v)end,store=function(target,v)target.attack=v;target.envelope_enabled=true end},
+      {id="decay",label="D",value=math.min(decay_limit,tonumber(controls.decay) or DEFAULTS.decay),default=math.min(decay_limit,DEFAULTS.decay),min=0,max=decay_limit,step=.01,
+        format=function(v)return envelope_value_text("decay",v)end,store=function(target,v)target.decay=v;target.envelope_enabled=true end},
+      {id="sustain",label="S",value=tonumber(controls.sustain) or DEFAULTS.sustain,default=DEFAULTS.sustain,min=0,max=1,step=.01,
+        format=function(v)return envelope_value_text("sustain",v)end,store=function(target,v)target.sustain=v;target.envelope_enabled=true end},
+      {id="release",label="R",value=math.min(release_limit,tonumber(controls.release) or DEFAULTS.release),default=math.min(release_limit,DEFAULTS.release),min=0,max=release_limit,step=.01,
+        format=function(v)return envelope_value_text("release",v)end,store=function(target,v)target.release=v;target.envelope_enabled=true end},
     }
-    -- ADSR attack/decay/sustain/release are edited directly on the waveform.
-    -- Keep this footer focused on the non-visual engine controls.
-    local knob_size=42
     local knob_count=#engine_knobs
-    -- Use centered columns instead of filling the entire width. The labels
-    -- are wider than the knob hit areas, so the cell width keeps them clear.
-    local column_width=66
     local footer_width=math.max(0,control_row_right-control_row_x)
+    -- Five equal-width columns give the essential envelope controls room to
+    -- breathe while keeping their centers evenly distributed across the row.
+    local column_width=math.floor(footer_width/knob_count)
+    local knob_size=math.max(32,math.min(46,column_width-8))
     local knob_row_width=column_width*knob_count
     local knob_row_start=control_row_x+math.max(0,(footer_width-knob_row_width)*.5)
     for index,item in ipairs(engine_knobs) do
@@ -2741,7 +3020,7 @@ function UI:mixer_strip(index,width,height)
     local function set_control(key,value)
       for _,target in ipairs(targets()) do
         local target_controls=app:pad(target).default_controls or {};app:pad(target).default_controls=target_controls
-        target_controls[key]=value;app:queue_pad_controls(target,true)
+        target_controls[key]=value;self:queue_live_pad_controls(target)
       end
     end
     local outputs={};for i=1,self.max_outputs do outputs[i]="OUT "..i end
@@ -2753,6 +3032,9 @@ function UI:mixer_strip(index,width,height)
     changed,pan=self:pan_slider("##mixpan"..index,pan,-1)
     if changed then set_control("pan",pan) end
     local show_sends=height>=300
+    local mixer_row_x,mixer_row_y=r.ImGui_GetCursorPosX(c),r.ImGui_GetCursorPosY(c)
+    local mixer_row_screen_x=r.ImGui_GetCursorScreenPos(c)
+    local mixer_row_width=r.ImGui_GetContentRegionAvail(c)
     local left,right=app:pad_meter(index);local meter_h=math.max(100,height-(show_sends and 146 or 111))
     self:stereo_meter("pad"..index,left,right,30,meter_h)
     r.ImGui_SameLine(c)
@@ -2775,7 +3057,14 @@ function UI:mixer_strip(index,width,height)
     local draw=r.ImGui_GetWindowDrawList(c);local fx1,fy1=r.ImGui_GetItemRectMin(c);local fx2,fy2=r.ImGui_GetItemRectMax(c);local unity_y=fy2-(fy2-fy1)*fader_position(1,pad_max_db)
     r.ImGui_DrawList_AddLine(draw,fx1-2,unity_y,fx2+2,unity_y,C.text,1)
     self:fader_cap(fader_value,0,1,color)
+    -- Pin the utility column to the padded right edge. Together with the
+    -- channel's reserved width, this leaves a deliberate gap from the cap.
+    local utility_left=fx2+4
+    local utility_right=mixer_row_screen_x+mixer_row_width
+    local utility_screen_x=math.max(utility_left,utility_right-23)
     r.ImGui_SameLine(c)
+    r.ImGui_SetCursorPosX(c,mixer_row_x+(utility_screen_x-mixer_row_screen_x))
+    r.ImGui_SetCursorPosY(c,mixer_row_y)
     r.ImGui_BeginGroup(c)
     r.ImGui_PushStyleColor(c,r.ImGui_Col_Button(),color)
     r.ImGui_PushStyleColor(c,r.ImGui_Col_ButtonHovered(),color)
@@ -2908,6 +3197,9 @@ function UI:mixer_bus_strip(id,label,track,width,height,output)
     if changed then app:set_track_value(track,"D_PAN",value*2-1) end
     -- Every fixed strip uses the same tall meter/fader span. Output send knobs
     -- consume the otherwise-empty footer instead of shortening OUT faders.
+    local mixer_row_x,mixer_row_y=r.ImGui_GetCursorPosX(c),r.ImGui_GetCursorPosY(c)
+    local mixer_row_screen_x=r.ImGui_GetCursorScreenPos(c)
+    local mixer_row_width=r.ImGui_GetContentRegionAvail(c)
     local left,right=app:track_meter(track);local meter_h=math.max(120,height-70)
     self:stereo_meter("bus"..id,left,right,30,meter_h)
     r.ImGui_SameLine(c)
@@ -2928,7 +3220,13 @@ function UI:mixer_bus_strip(id,label,track,width,height,output)
     local draw=r.ImGui_GetWindowDrawList(c);local fx1,fy1=r.ImGui_GetItemRectMin(c);local fx2,fy2=r.ImGui_GetItemRectMax(c);local unity_y=fy2-(fy2-fy1)*fader_position(1,bus_max_db)
     r.ImGui_DrawList_AddLine(draw,fx1-2,unity_y,fx2+2,unity_y,C.text,1)
     self:fader_cap(fader_value,0,1)
-    r.ImGui_SameLine(c);r.ImGui_BeginGroup(c)
+    local utility_left=fx2+4
+    local utility_right=mixer_row_screen_x+mixer_row_width
+    local utility_screen_x=math.max(utility_left,utility_right-23)
+    r.ImGui_SameLine(c)
+    r.ImGui_SetCursorPosX(c,mixer_row_x+(utility_screen_x-mixer_row_screen_x))
+    r.ImGui_SetCursorPosY(c,mixer_row_y)
+    r.ImGui_BeginGroup(c)
     local bus_muted=app:track_value(track,"B_MUTE",0)>0
     local bus_soloed=app:track_value(track,"I_SOLO",0)>0
     if self:button("M##busmute"..id,20,22,bus_muted and C.red or nil) then app:set_mixer_track_mute(track,not bus_muted) end
@@ -2954,7 +3252,7 @@ end
 function UI:mixer_view(width,height)
   local r,c,app=self.host,self.ctx,self.app
   local bank=app.rack.selected_bank or 1
-  local outputs=app:active_outputs();local strip_width=80
+  local outputs=app:active_outputs();local strip_width=92
   local fixed_count=1+(self.mixer_show_aux and 2 or 0)+(self.mixer_show_outputs and #outputs or 0)
   local desired_fixed=fixed_count*(strip_width+3)+6
   local rail_width=42;local mixer_width=math.max(200,width-rail_width-4)
@@ -2977,7 +3275,7 @@ function UI:mixer_view(width,height)
     local first=(bank-1)*16+1
     for offset=0,15 do
       if offset>0 then r.ImGui_SameLine(c) end
-      self:mixer_strip(first+offset,82,body_height-18)
+      self:mixer_strip(first+offset,92,body_height-18)
     end
   end
   self:end_panel(visible)
@@ -3055,7 +3353,7 @@ function UI:instrument_wave_panel(width,height)
     r.ImGui_SameLine(c); r.ImGui_TextDisabled(c,state.sample_label(pad))
     local available=r.ImGui_GetContentRegionAvail(c)
     local trim_changed,trim_start,trim_end,attack,decay,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve=self:waveform(path,available,math.max(82,height-82),controls.sample_start or DEFAULTS.sample_start,controls.sample_end or DEFAULTS.sample_end,"##instrument_waveform",controls)
-    if trim_changed then controls.sample_start,controls.sample_end,controls.attack,controls.decay,controls.sustain,controls.release,controls.fade_in,controls.fade_out,controls.fade_in_curve,controls.fade_out_curve=trim_start,trim_end,attack,decay,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve;app:queue_pad_controls(nil,true) end
+    if trim_changed then controls.sample_start,controls.sample_end,controls.attack,controls.decay,controls.sustain,controls.release,controls.fade_in,controls.fade_out,controls.fade_in_curve,controls.fade_out_curve=trim_start,trim_end,attack,decay,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve;self:queue_live_pad_controls() end
     if self:icon_button("##instrument_load","load","Load or replace sample",30,27,false,C.playhead) then app:load_selected_sample() end
     r.ImGui_SameLine(c);if self:icon_button("##instrument_previous_sample","previous","Previous sample in folder",28,27) then app:cycle_sample(-1) end
     r.ImGui_SameLine(c);if self:icon_button("##instrument_next_sample","next","Next sample in folder",28,27) then app:cycle_sample(1) end
@@ -3105,8 +3403,8 @@ function UI:instrument_sampler(width,height)
     for i,f in ipairs(env) do
       if i>1 then r.ImGui_SameLine(c) end
       local current=controls[f[2]]; if current==nil then current=f[3] end
-      local did,next_value=self:knob("##instrument_"..f[2],f[1],current,f[3],56)
-      if did then controls[f[2]]=next_value; app:queue_pad_controls(nil,true) end
+      local did,next_value=self:knob("##instrument_"..f[2],f[1],current,f[3],56,{formatter=function(v)return envelope_value_text(f[2],v)end,wheel_step=.01})
+      if did then controls[f[2]]=next_value; self:queue_live_pad_controls() end
     end
     r.ImGui_Separator(c)
     r.ImGui_Text(c,"PAD GROUPS")
@@ -3231,9 +3529,10 @@ function UI:instrument_sampler_docked(width,height)
     for i,field in ipairs(env) do
       if i>1 then r.ImGui_SameLine(c) end
       local current=controls[field[2]];if current==nil then current=field[3] end
-      local changed,value=r.ImGui_VSliderDouble(c,"##docked_"..field[2],26,68,current,0,1,"%.2f")
+      local changed,value=r.ImGui_VSliderDouble(c,"##docked_"..field[2],26,68,current,0,1,"")
+      if r.ImGui_IsItemHovered(c) then self:tooltip(envelope_value_text(field[2],value)) end
       if r.ImGui_IsItemHovered(c) and r.ImGui_IsMouseClicked and r.ImGui_IsMouseClicked(c,1) then value=field[3];changed=true end
-      if changed then controls[field[2]]=value;app:queue_pad_controls(nil,true) end
+      if changed then controls[field[2]]=value;self:queue_live_pad_controls() end
       local label_width=r.ImGui_CalcTextSize(c,field[1]);r.ImGui_SetCursorPosX(c,r.ImGui_GetCursorPosX(c)+math.max(0,(26-label_width)/2));r.ImGui_TextDisabled(c,field[1])
     end
     r.ImGui_EndGroup(c)
@@ -3269,9 +3568,21 @@ end
 
 function UI:right_inspector(width,height)
   local r,c=self.host,self.ctx
-  local visible=self:begin_panel("##inspector",width,height)
+  local visible=self:begin_panel("##inspector",width,height,controlled_scroll_flags(r))
   if visible then
+    local inspector_scroll_y=r.ImGui_GetScrollY and r.ImGui_GetScrollY(c) or 0
+    self.control_wheel_consumed=false
     self:pads()
+    -- Custom controls use the wheel for value adjustment. Dear ImGui may also
+    -- apply that event to this scrollable child, so restore the pre-gesture
+    -- position after the controls have declared ownership.
+    if r.ImGui_SetScrollY then
+      if self.control_wheel_consumed then r.ImGui_SetScrollY(c,inspector_scroll_y)
+      elseif r.ImGui_IsWindowHovered(c) and r.ImGui_GetMouseWheel then
+        local wheel=r.ImGui_GetMouseWheel(c)
+        if wheel~=0 then r.ImGui_SetScrollY(c,math.max(0,inspector_scroll_y-wheel*38)) end
+      end
+    end
   end
   self:end_panel(visible)
 end
@@ -3840,14 +4151,19 @@ function UI:frame()
   end
   local now=r.time_precise()
   local frame_started=now
+  self.perf_frame=(self.perf_frame or 0)+1
+  self.perf_detail_frame=self.perf_probe and self.perf_frame%30==0
   if self.perf_probe and self.perf_last_frame then self:perf_record("defer gap",math.max(0,now-self.perf_last_frame)) end
   self.perf_last_frame=now
+  local section_started=self:perf_begin()
   if now>=(self.next_project_poll or 0) then
     self.next_project_poll=now+.05
     self.app:sync_engine_variation()
     self.app:follow_engine_variation_display()
     if self.app.follow_variation_events then self.app:poll_variation_event_selection(false) end
   end
+  self:perf_end("project/playback poll",section_started)
+  section_started=self:perf_begin()
   r.ImGui_SetNextWindowSize(c,1480,820,r.ImGui_Cond_FirstUseEver())
   if (self.focus_frames or 0)>0 and r.ImGui_SetNextWindowFocus then
     r.ImGui_SetNextWindowFocus(c)
@@ -3881,9 +4197,15 @@ function UI:frame()
   r.ImGui_PushStyleVar(c,r.ImGui_StyleVar_WindowPadding(),3,3)
   local visible
   visible,self.open=r.ImGui_Begin(c,"ReaDrumXT",self.open,r.ImGui_WindowFlags_NoCollapse())
+  self:perf_end("window/style setup",section_started)
   if visible then
+    section_started=self:perf_begin()
     self:poll_played_pad()
+    self:perf_end("recent MIDI poll",section_started)
+    section_started=self:perf_begin()
     self:poll_triggered_pad()
+    self:perf_end("trigger mailbox poll",section_started)
+    section_started=self:perf_begin()
     self:shortcuts()
     if self.drop_error and r.time_precise()<(self.drop_error_until or 0) then
       r.ImGui_PushStyleColor(c,r.ImGui_Col_Text(),self.drop_error_color or C.red)
@@ -3893,17 +4215,26 @@ function UI:frame()
     elseif self.drop_error then
       self.drop_error=nil;self.drop_error_color=nil;self.drop_error_until=0
     end
+    self:perf_end("input/status UI",section_started)
+    section_started=self:perf_begin()
     self:top_toolbar()
+    self:perf_end("top toolbar UI",section_started)
     local available_width,available_height=r.ImGui_GetContentRegionAvail(c)
+    section_started=self:perf_begin()
     if self.main_view=="mixer" then
+      local view_started=self:perf_begin()
       self:mixer_view(available_width,available_height)
+      self:perf_end("mixer view UI",view_started)
+      self:perf_end("main content UI",section_started)
     else
     local bottom_height=0
       if self.parameter_open then
         local maximum=math.max(110,available_height-110)
         self.parameter_height=math.max(110,math.min(maximum,self.parameter_height or 190));bottom_height=self.parameter_height
       end
+      local view_started=self:perf_begin()
       self:info_panel(available_height)
+      self:perf_end("info panel UI",view_started)
       local right_width=self.inspector_open and 360 or 0
       local center_width=self.inspector_open and (-right_width-4) or 0
       local center_visible=self:begin_panel("##center",center_width,available_height,no_scroll_flags(r))
@@ -3911,30 +4242,63 @@ function UI:frame()
         local lane_toolbar_height=self.lane_toolbar_open and LANE_TOOLBAR_HEIGHT or 0
         local reserved=lane_toolbar_height+(self.lane_toolbar_open and 3 or 0)
         local grid_height=self.parameter_open and math.max(90,available_height-bottom_height-reserved-6) or math.max(90,available_height-reserved)
+        view_started=self:perf_begin()
         self:sequence_grid(grid_height)
-        if self.lane_toolbar_open then self:lane_toolbar(LANE_TOOLBAR_HEIGHT) end
+        self:perf_end("sequence grid UI",view_started)
+        if self.lane_toolbar_open then
+          view_started=self:perf_begin()
+          self:lane_toolbar(LANE_TOOLBAR_HEIGHT)
+          self:perf_end("lane toolbar UI",view_started)
+        end
         if self.parameter_open then
+          view_started=self:perf_begin()
           self:parameter_splitter()
-          if self.editor_mode=="piano" then self:piano_roll_editor(bottom_height) else self:parameter_editor(bottom_height) end
+          self:perf_end("parameter splitter UI",view_started)
+          view_started=self:perf_begin()
+          if self.editor_mode=="piano" then
+            self:piano_roll_editor(bottom_height)
+            self:perf_end("piano roll UI",view_started)
+          else
+            self:parameter_editor(bottom_height)
+            self:perf_end("parameter editor UI",view_started)
+          end
         end
       end
       self:end_panel(center_visible)
+    self:perf_end("main content UI",section_started)
     if self.inspector_open then
+      section_started=self:perf_begin()
       r.ImGui_SameLine(c)
       self:right_inspector(right_width,available_height)
+      self:perf_end("right inspector UI",section_started)
     end
     end
   end
   r.ImGui_End(c)
+  section_started=self:perf_begin()
   self:eula_viewer()
   r.ImGui_PopStyleVar(c,6)
   r.ImGui_PopStyleColor(c,19)
   self:flush_audition(not self.open)
+  self:perf_end("window finalize UI",section_started)
+  section_started=self:perf_begin()
   if now>=(self.next_bridge_poll or 0) then self.next_bridge_poll=now+.05;self.app:poll_bridge() end
+  self:perf_end("bridge poll",section_started)
   -- Publishing rebuilds the runtime image and may reconcile REAPER tracks.
   -- Never do that in the middle of a mouse gesture; commit immediately after
   -- the active control is released instead.
   local control_active=r.ImGui_IsAnyItemActive and r.ImGui_IsAnyItemActive(c)
+  -- Keep REAPER/gmem calls out of the active mouse gesture. Even the compact
+  -- control packet can occasionally block on the host and delay delivery of
+  -- the next UI frame, making waveform handles visibly trail the pointer.
+  -- The model and overlay still update every frame; audio commits on release.
+  if self.live_pad_controls_pending and not control_active then
+    section_started=self:perf_begin()
+    self.app:sync_pending_pad_controls()
+    self.live_pad_controls_pending=false
+    self:perf_end("live control commit",section_started)
+  end
+  section_started=self:perf_begin()
   if not control_active or self.wheel_commit then
     -- Structural reconciliation has substantial fixed overhead. Coalesce a
     -- multi-sample drop into one delayed transaction instead of repeatedly
@@ -3950,11 +4314,14 @@ function UI:frame()
     if self.app.checkpoint_task then local started=r.time_precise();self.app:process_checkpoint();self:perf_record("checkpoint slice",r.time_precise()-started) end
     if self.app.state_pending and now>=(self.app.state_due or math.huge) then local started=r.time_precise();self.app:save_if_due(false);self:perf_record("state begin/slice",r.time_precise()-started) end
   end
+  self:perf_end("idle/background work",section_started)
   -- Shared-memory payloads are staged with a strict per-frame budget and only
   -- committed after both runtime and transport pages are complete.
   local publish_started=r.time_precise();self.app:process_publish(4096);self:perf_record("publish slice",r.time_precise()-publish_started)
+  section_started=self:perf_begin()
   self.app:poll_sampler_loads(4)
-  self:perf_record("ReaDrum frame",r.time_precise()-frame_started)
+  self:perf_end("sampler status poll",section_started)
+  self:perf_record("frame total",r.time_precise()-frame_started)
   return self.open
 end
 

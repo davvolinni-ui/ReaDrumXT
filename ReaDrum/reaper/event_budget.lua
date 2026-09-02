@@ -1,4 +1,3 @@
--- @noindex
 -- Phase 3B.3 pure admission analysis for a promoted v2 image.
 -- This module performs no host calls and does not publish or promote images.
 local snapshot=require("ReaDrum.reaper.snapshot_v2")

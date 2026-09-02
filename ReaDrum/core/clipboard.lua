@@ -1,4 +1,3 @@
--- @noindex
 local Commands = require("ReaDrum.core.commands")
 local Model = require("ReaDrum.core.model")
 

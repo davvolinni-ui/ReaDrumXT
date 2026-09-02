@@ -1,4 +1,3 @@
--- @noindex
 -- Pure mapping between ReaDrum's stable logical pad IDs and transient sampler
 -- engine locations. Bank/slot addresses must never be persisted as pad identity.
 

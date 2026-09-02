@@ -1,20 +1,5 @@
--- @description ReaDrumXT - Drum Sampler and Polymetric Step Sequencer
--- @version 0.1.1
--- @author davvolinni-ui
--- @changelog
---   Fixed simultaneous pad playback indicators.
---   Added Clear Pad to the sequencer lane context menu.
--- @link
---   Support https://forum.cockos.com/showthread.php?t=310870
---   Repository https://github.com/davvolinni-ui/ReaDrumXT
--- @provides
---   [nomain] EULA.md
---   [nomain] THIRD_PARTY_NOTICES.md
---   [nomain] app/*.lua
---   [nomain] core/*.lua
---   [nomain] reaper/*.lua
---   [effect] Effects/*.jsfx > ReaDrum/
-
+-- @description ReaDrumXT - Native Drum Machine and Step Sequencer
+-- @version 0.1.0-alpha
 local source = debug.getinfo(1, "S").source:sub(2)
 local scripts = assert(source:match("^(.*)[/\\]ReaDrum[/\\]ReaDrum%.lua$"), "ReaDrum must remain inside Scripts/ReaDrum")
 package.path = scripts .. "/?.lua;" .. scripts .. "/?/init.lua;" .. package.path
@@ -38,11 +23,16 @@ end
 
 local function report_error(title,failure)
   local message=tostring(failure)
+  local log_path=scripts.."/ReaDrum/ReaDrum-error.log"
+  local logged=false
   pcall(function()
-    local file=assert(io.open(scripts.."/ReaDrum/ReaDrum-error.log","ab"))
+    local file=assert(io.open(log_path,"ab"))
     file:write(os.date("!%Y-%m-%dT%H:%M:%SZ"),"  ",title,"\n",message,"\n\n");file:close()
+    logged=true
   end)
-  reaper.MB(message.."\n\nA diagnostic log was written beside ReaDrum.lua.",title,0)
+  local guidance="ReaDrumXT encountered an unexpected error and stopped safely.\n\nPlease restart ReaDrumXT."
+  if logged then guidance=guidance.." Diagnostic details were saved to ReaDrum-error.log beside ReaDrum.lua." end
+  reaper.MB(guidance,title,0)
 end
 
 local function launch()
@@ -114,6 +104,8 @@ local function launch()
 
   local function loop()
     if not owns_runtime() then close();return end
+    local loop_started=ui:perf_begin()
+    local project_scan_started=ui:perf_begin()
     local active_project,active_path=reaper.EnumProjects(-1,"")
     local active_guid=project_guid(active_project)
     local active_change_count=project_change_count(active_project)
@@ -128,6 +120,7 @@ local function launch()
     local project_changed=active_project~=current_project or active_guid~=current_guid or project_replaced
     local pending_state_ready=pending_state_project==active_project and
       pending_state_guid==active_guid and has_readrum_state
+    ui:perf_end("outer project scan",project_scan_started)
 
     -- Keep the transition latched while waiting. Once extension state appears,
     -- force a rebind even if REAPER reused the same handle/GUID and its change
@@ -184,10 +177,13 @@ local function launch()
     end
     local success, keep_open = xpcall(function() return ui:frame() end, debug.traceback)
     if not success then close();report_error("ReaDrum error",keep_open);return end
+    local post_frame_started=ui:perf_begin()
     current_change_count=project_change_count(current_project)
     current_binding=controllers[current_project]
     if current_binding then current_binding.change_count=current_change_count end
     if current_binding then current_binding.state_signature=project_state_signature(current_project) end
+    ui:perf_end("post-frame state scan",post_frame_started)
+    ui:perf_end("loop total",loop_started)
     if keep_open then reaper.defer(loop) else close() end
   end
 

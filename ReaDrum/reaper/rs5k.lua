@@ -1,4 +1,3 @@
--- @noindex
 -- ReaSamplOmatic5000 boundary. Every lookup is by runtime identity, GUID, or
 -- enumerated parameter name/identifier; callers never retain an FX index.
 local tags = require("ReaDrum.reaper.tags")

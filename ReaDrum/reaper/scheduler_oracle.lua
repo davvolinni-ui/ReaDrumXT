@@ -1,4 +1,3 @@
--- @noindex
 -- Deterministic reference for the Phase 3B.2 audio-thread scheduler. It only
 -- consumes an immutable v2 image and is intentionally free of REAPER.
 local snapshot=require("ReaDrum.reaper.snapshot_v2")

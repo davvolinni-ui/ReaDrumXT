@@ -1,4 +1,3 @@
--- @noindex
 -- Phase 3A protocol v1: fixed-width pad routing and one RR group only.
 local M={MAGIC=52443,PROTOCOL_VERSION=1,SCHEMA_VERSION=1,MAX_MEMBERS=16}
 M.runtime=require("ReaDrum.reaper.snapshot_v2")
@@ -52,7 +51,13 @@ function M.admit_runtime_pair(image,map_image,options)
  local max_block_samples=options.max_block_samples or 16384
  if type(max_block_samples)~="number"or max_block_samples~=math.floor(max_block_samples)or max_block_samples<1 then return nil,"max_block_samples must be a positive integer"end
  local block_qn=0;for i=1,#map.anchors-1 do local a,b=map.anchors[i],map.anchors[i+1];local span=(b.q-a.q)/(b.t-a.t)*max_block_samples/map.sample_rate;if span>block_qn then block_qn=span end end
- local reconstruction_qn=math.max(0,map.qn_end)
+ -- The dispatcher never walks from the beginning of the transport map to the
+ -- current play position.  On a fresh start it backs up only a two-sample
+ -- tolerance; on a loop/discontinuity it reconstructs at most one complete
+ -- audio block.  Charging every lane for map.qn_end made a valid 128-lane kit
+ -- fail admission solely because the map keeps a 256-QN scheduling horizon,
+ -- leaving the previously published pattern active.
+ local reconstruction_qn=block_qn
  local analysis,e=M.event_budget.analyze(image,{block_qn_span=block_qn,reconstruction_qn_span=reconstruction_qn});if not analysis then return nil,e end
  analysis.max_block_samples=max_block_samples
  if not analysis.accepted then return nil,pair_error(analysis),analysis end

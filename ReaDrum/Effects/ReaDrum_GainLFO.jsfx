@@ -1,4 +1,3 @@
-// @noindex
 desc:ReaDrum Gain LFO
 // Tempo-synchronized kit-bus gain modulation. This processor never writes to
 // the REAPER track fader and is transparent while disabled or Amount is zero.

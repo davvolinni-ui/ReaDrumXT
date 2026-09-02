@@ -1,4 +1,3 @@
--- @noindex
 local Model = require("ReaDrum.core.model")
 
 return {

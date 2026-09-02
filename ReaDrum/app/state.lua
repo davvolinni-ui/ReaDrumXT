@@ -1,4 +1,3 @@
--- @noindex
 local json = require("ReaDrum.core.json")
 local model = require("ReaDrum.core.model")
 

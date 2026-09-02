@@ -1,4 +1,3 @@
--- @noindex
 -- Narrow REAPER host boundary for the ReaDrum lifecycle layer.
 -- Tests may inject an object implementing this interface; the pure core never
 -- imports this module.

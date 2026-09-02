@@ -1,4 +1,3 @@
--- @noindex
 local tags = require("ReaDrum.reaper.tags")
 local rs5k = require("ReaDrum.reaper.rs5k")
 local sampler_engine = require("ReaDrum.reaper.sampler_engine")
@@ -23,8 +22,19 @@ end
 local function desired_objects(rack, pad_ids, include_pad_tracks)
   local desired = {
     { kind = "folder", object_id = rack.id .. "/folder", name = rack.name },
+    { kind = "dry", object_id = rack.id .. "/dry", name = "ReaDrumXT Dry Bus" },
     { kind = "sequencer", object_id = rack.id .. "/sequencer", name = "ReaDrumXT MIDI" },
   }
+  if not include_pad_tracks then
+    local used_banks={}
+    for _,pad in ipairs(rack.pads) do
+      if pad.sample~=false and pad.sample~=nil then used_banks[math.floor((pad.logical_index-1)/16)]=true end
+    end
+    for bank_index=0,7 do if used_banks[bank_index] then
+      desired[#desired+1]={kind="bank",object_id=tostring(bank_index),bank_index=bank_index,
+        name=string.format("ReaDrumXT Bank %s",string.char(65+bank_index))}
+    end end
+  end
   for _, pad in ipairs(rack.pads) do
     if include_pad_tracks and pad.sample ~= false and (not pad_ids or pad_ids[pad.id]) then
       desired[#desired + 1] = {
@@ -66,7 +76,20 @@ end
 
 local function create_track(adapter, spec, rack_id, report, found)
   local insertion=adapter:track_count()
-  if found and spec.kind=="output" then
+  if found and spec.kind=="dry" then
+    local folder=found[key("folder",rack_id.."/folder")]
+    if folder then insertion=adapter:track_index(folder)+1 end
+  elseif found and spec.kind=="bank" then
+    local first_output_or_aux
+    for _,managed in pairs(found) do
+      local tag=tags.read_track(adapter,managed)
+      if tag and (tag.kind=="output" or tag.kind=="aux") then
+        local index=adapter:track_index(managed)
+        first_output_or_aux=first_output_or_aux and math.min(first_output_or_aux,index) or index
+      end
+    end
+    if first_output_or_aux then insertion=first_output_or_aux end
+  elseif found and spec.kind=="output" then
     local first_aux
     for _,aux_id in ipairs({"aux_a","aux_b"}) do
       local aux=found[key("aux",aux_id)]
@@ -86,7 +109,7 @@ local function create_track(adapter, spec, rack_id, report, found)
   local track = adapter:insert_track(insertion)
   -- If the previous managed child closed the folder, transfer that closing
   -- edge to the newly inserted output so it cannot appear outside the rack.
-  if prior and prior_depth<0 and (spec.kind=="sequencer" or spec.kind=="output") then
+  if prior and prior_depth<0 and (spec.kind=="sequencer" or spec.kind=="bank" or spec.kind=="output") then
     adapter:set_track_value(prior,"I_FOLDERDEPTH",0)
     adapter:set_track_value(track,"I_FOLDERDEPTH",prior_depth)
   end
@@ -100,6 +123,12 @@ local function create_track(adapter, spec, rack_id, report, found)
     adapter:set_track_value(track, "I_RECARM", 1)
     adapter:set_track_value(track, "I_RECMON", 1)
     adapter:set_track_value(track, "I_RECINPUT", 6112) -- all MIDI devices, all channels
+  elseif spec.kind=="bank" then
+    adapter:set_track_value(track,"B_MAINSEND",0)
+    adapter:set_track_value(track,"B_SHOWINTCP",0)
+    adapter:set_track_value(track,"B_SHOWINMIXER",0)
+    adapter:set_track_value(track,"I_NCHAN",96)
+    adapter:set_track_string(track,"P_EXT:READRUM_BANK_INDEX",tostring(spec.bank_index))
   end
   report.created_tracks = report.created_tracks + 1
   report.changed = true
@@ -109,8 +138,12 @@ end
 local function reconcile_folder_shape(adapter, rack, found, report, include_pad_tracks)
   local ordered = {
     found[key("folder", rack.id .. "/folder")],
+    found[key("dry", rack.id .. "/dry")],
     found[key("sequencer", rack.id .. "/sequencer")],
   }
+  if not include_pad_tracks then
+    for bank_index=0,7 do local track=found[key("bank",tostring(bank_index))];if track then ordered[#ordered+1]=track end end
+  end
   if include_pad_tracks then for _, pad in ipairs(rack.pads) do
     if pad.sample ~= false then ordered[#ordered + 1] = found[key("pad", pad.id)] end
   end end
@@ -118,6 +151,8 @@ local function reconcile_folder_shape(adapter, rack, found, report, include_pad_
     local used={};for _,pad in ipairs(rack.pads)do if pad.sample~=false then used[pad.output_id]=true end end
     for _,output in ipairs(rack.outputs or{})do if output.id=="main"or used[output.id]then ordered[#ordered+1]=found[key("output",output.id)]end end
   end
+  local dry_last=#ordered
+  for _,aux_id in ipairs({"aux_a","aux_b"}) do ordered[#ordered+1]=found[key("aux",aux_id)] end
   local first = adapter:track_index(ordered[1])
   for index, track in ipairs(ordered) do
     if adapter:track_index(track) ~= first + index - 1 then
@@ -126,21 +161,27 @@ local function reconcile_folder_shape(adapter, rack, found, report, include_pad_
     end
   end
   for index, track in ipairs(ordered) do
-    local wanted = index == 1 and 1 or (index == #ordered and -1 or 0)
+    local wanted=0
+    if index==1 or index==2 then
+      wanted=1
+    elseif index==dry_last or index==#ordered then
+      wanted=-1
+    end
     if adapter:get_track_value(track, "I_FOLDERDEPTH") ~= wanted then
       adapter:set_track_value(track, "I_FOLDERDEPTH", wanted)
       report.changed = true
     end
   end
-  -- AUX returns are managed siblings immediately after the rack folder. This
-  -- keeps drum-bus clipping/compression off the wet returns and lets unrelated
-  -- project tracks send to the same reverb or delay returns.
+  local dry=found[key("dry",rack.id.."/dry")]
+  if dry and adapter:get_track_value(dry,"B_MAINSEND")~=1 then adapter:set_track_value(dry,"B_MAINSEND",1);report.changed=true end
+  -- AUX returns are siblings of the Dry Bus but remain children of the outer
+  -- rack folder. Freezing/rendering that outer folder therefore captures the
+  -- dry outputs and both wet returns without creating a feedback path.
   for _,aux_id in ipairs({"aux_a","aux_b"}) do
     local aux=found[key("aux",aux_id)]
-    if aux and adapter:get_track_value(aux,"I_FOLDERDEPTH")~=0 then adapter:set_track_value(aux,"I_FOLDERDEPTH",0);report.changed=true end
     if aux and adapter:get_track_value(aux,"B_MAINSEND")~=1 then adapter:set_track_value(aux,"B_MAINSEND",1);report.changed=true end
   end
-  report.folder_shape = "managed_folder_with_project_aux_returns"
+  report.folder_shape = "managed_nested_folder_with_aux_returns"
 end
 
 local function reconcile_output_send(adapter,rack_id,sequencer,track,output_id,pair,report)
@@ -152,6 +193,39 @@ local function reconcile_output_send(adapter,rack_id,sequencer,track,output_id,p
   local desired={I_SRCCHAN=pair*2,I_DSTCHAN=0,I_MIDIFLAGS=31,D_VOL=1}
   for name,value in pairs(desired)do if adapter:get_send_value(sequencer,canonical,name)~=value then adapter:set_send_value(sequencer,canonical,name,value);report.changed=true end end
   return wanted
+end
+
+local function reconcile_bank_midi_send(adapter,rack_id,sequencer,worker,bank_index,report)
+  local tag_id="bank-midi-"..bank_index;local wanted=tags.send_key(rack_id,tag_id);local canonical
+  for index=0,adapter:send_count(sequencer)-1 do local tag=tags.read_send(adapter,sequencer,index)
+    if tag and tag.rack_id==rack_id and tag.object_id==wanted and adapter:send_destination(sequencer,index)==worker then canonical=index;break end
+  end
+  if canonical==nil then canonical=adapter:create_send(sequencer,worker);tags.write_send(adapter,sequencer,canonical,rack_id,tag_id);report.created_sends=report.created_sends+1;report.changed=true end
+  local bus=bank_index+1
+  local desired={I_SRCCHAN=-1,I_DSTCHAN=0,I_MIDIFLAGS=(bus<<14)|(bus<<22),D_VOL=1,I_SENDMODE=0}
+  for name,value in pairs(desired)do if adapter:get_send_value(sequencer,canonical,name)~=value then adapter:set_send_value(sequencer,canonical,name,value);report.changed=true end end
+  return wanted
+end
+
+local function reconcile_worker_audio_send(adapter,rack_id,worker,destination,bank_index,tag_suffix,source_channel,report,destination_channel)
+  local tag_id="bank-audio-"..bank_index.."-"..tag_suffix;local wanted=tags.send_key(rack_id,tag_id);local canonical
+  for index=0,adapter:send_count(worker)-1 do local tag=tags.read_send(adapter,worker,index)
+    if tag and tag.rack_id==rack_id and tag.object_id==wanted and adapter:send_destination(worker,index)==destination then canonical=index;break end
+  end
+  if canonical==nil then canonical=adapter:create_send(worker,destination);tags.write_send(adapter,worker,canonical,rack_id,tag_id);report.created_sends=report.created_sends+1;report.changed=true end
+  local desired={I_SRCCHAN=source_channel,I_DSTCHAN=destination_channel or 0,I_MIDIFLAGS=31,D_VOL=1,I_SENDMODE=0}
+  for name,value in pairs(desired)do if adapter:get_send_value(worker,canonical,name)~=value then adapter:set_send_value(worker,canonical,name,value);report.changed=true end end
+  return wanted
+end
+
+local function reconcile_pad_aux_send(adapter,rack_id,source,destination,output_id,aux_id,source_channel,report)
+  local tag_id="pad-aux-"..output_id.."-"..aux_id;local wanted=tags.send_key(rack_id,tag_id);local canonical
+  for index=0,adapter:send_count(source)-1 do local tag=tags.read_send(adapter,source,index)
+    if tag and tag.rack_id==rack_id and tag.object_id==wanted and adapter:send_destination(source,index)==destination then canonical=index;break end
+  end
+  if canonical==nil then canonical=adapter:create_send(source,destination);tags.write_send(adapter,source,canonical,rack_id,tag_id);report.created_sends=report.created_sends+1;report.changed=true end
+  local desired={I_SRCCHAN=source_channel,I_DSTCHAN=0,I_MIDIFLAGS=31,D_VOL=1,I_SENDMODE=0}
+  for name,value in pairs(desired)do if adapter:get_send_value(source,canonical,name)~=value then adapter:set_send_value(source,canonical,name,value);report.changed=true end end
 end
 
 local function reconcile_aux_bus_send(adapter,rack_id,sequencer,track,aux_id,source_channel,report)
@@ -307,11 +381,11 @@ function M.reconcile(adapter, rack, options)
       if not found[object_key] then found[object_key] = create_track(adapter, spec, rack.id, report,found) end
     end
     if use_bank_engine then
-      local wanted={}
-      for _,output in ipairs(rack.outputs or {}) do wanted[output.id]=true end
+      local wanted={};for _,output in ipairs(rack.outputs or {}) do wanted[output.id]=true end
+      local wanted_banks={};for _,pad in ipairs(rack.pads)do if pad.sample~=false and pad.sample~=nil then wanted_banks[tostring(math.floor((pad.logical_index-1)/16))]=true end end
       for object_key,track in pairs(found) do
         local tag=tags.read_track(adapter,track)
-        if tag and tag.kind=="output" and not wanted[tag.object_id] then
+        if tag and ((tag.kind=="output" and not wanted[tag.object_id]) or (tag.kind=="bank" and not wanted_banks[tag.object_id])) then
           adapter:delete_track(track);found[object_key]=nil;report.deleted_tracks=report.deleted_tracks+1;report.changed=true
         end
       end
@@ -328,17 +402,36 @@ function M.reconcile(adapter, rack, options)
       -- tracks. They remain available for rollback, but cannot double-trigger.
       local aux_a,aux_b=found[key("aux","aux_a")],found[key("aux","aux_b")]
       local preserved={}
-      preserved[reconcile_aux_bus_send(adapter,rack.id,sequencer,aux_a,"aux_a",32,report)]=true
-      preserved[reconcile_aux_bus_send(adapter,rack.id,sequencer,aux_b,"aux_b",34,report)]=true
-      for pair,output in ipairs(rack.outputs or{})do local track=found[key("output",output.id)];if track then preserved[reconcile_output_send(adapter,rack.id,sequencer,track,output.id,pair-1,report)]=true end end
-      for _,output in ipairs(rack.outputs or{})do local track=found[key("output",output.id)];if track then reconcile_output_aux_send(adapter,rack.id,track,aux_a,output.id,"a",output.aux_a_send,report);reconcile_output_aux_send(adapter,rack.id,track,aux_b,output.id,"b",output.aux_b_send,report)end end
+      local bank_tracks={}
+      for bank_index=0,7 do local worker=found[key("bank",tostring(bank_index))];if worker then
+        bank_tracks[bank_index+1]=worker
+        if adapter:get_track_value(worker,"I_NCHAN")~=96 then adapter:set_track_value(worker,"I_NCHAN",96);report.changed=true end
+        preserved[reconcile_bank_midi_send(adapter,rack.id,sequencer,worker,bank_index,report)]=true
+        local worker_preserved={}
+        for pair,output in ipairs(rack.outputs or{})do local output_track=found[key("output",output.id)];if output_track then
+          worker_preserved[reconcile_worker_audio_send(adapter,rack.id,worker,output_track,bank_index,"output-"..output.id,(pair-1)*2,report)]=true
+          worker_preserved[reconcile_worker_audio_send(adapter,rack.id,worker,output_track,bank_index,"output-"..output.id.."-aux-a",32+(pair-1)*2,report,2)]=true
+          worker_preserved[reconcile_worker_audio_send(adapter,rack.id,worker,output_track,bank_index,"output-"..output.id.."-aux-b",64+(pair-1)*2,report,4)]=true
+        end end
+        for send=adapter:send_count(worker)-1,0,-1 do local tag=tags.read_send(adapter,worker,send)
+          if tag and tag.rack_id==rack.id and not worker_preserved[tag.object_id] then adapter:remove_send(worker,send);report.changed=true end
+        end
+      end end
+      for _,output in ipairs(rack.outputs or{})do local track=found[key("output",output.id)];if track then
+        if adapter:get_track_value(track,"I_NCHAN")~=6 then adapter:set_track_value(track,"I_NCHAN",6);report.changed=true end
+        reconcile_pad_aux_send(adapter,rack.id,track,aux_a,output.id,"a",2,report)
+        reconcile_pad_aux_send(adapter,rack.id,track,aux_b,output.id,"b",4,report)
+        reconcile_output_aux_send(adapter,rack.id,track,aux_a,output.id,"a",output.aux_a_send,report)
+        reconcile_output_aux_send(adapter,rack.id,track,aux_b,output.id,"b",output.aux_b_send,report)
+      end end
       for send=adapter:send_count(sequencer)-1,0,-1 do
         local tag=tags.read_send(adapter,sequencer,send)
         if tag and tag.rack_id==rack.id and not preserved[tag.object_id] then
           adapter:remove_send(sequencer,send);report.changed=true
         end
       end
-      report.sampler_cache,report.sampler_engine=sampler_engine.reconcile(adapter.host,sequencer,rack,options.sampler_cache)
+      report.bank_tracks=bank_tracks
+      report.sampler_cache,report.sampler_engine=sampler_engine.reconcile(adapter.host,sequencer,rack,options.sampler_cache,bank_tracks)
       report.changed=true
     else for _, pad in ipairs(rack.pads) do
       local requested=not options.pad_ids or options.pad_ids[pad.id]

@@ -1,4 +1,3 @@
--- @noindex
 local model = require("ReaDrum.core.model")
 local json = require("ReaDrum.core.json")
 local clipboard = require("ReaDrum.core.clipboard")
@@ -663,6 +662,7 @@ function Controller:process_publish(budget)
 end
 
 function Controller:mark_dirty(structural,publish)
+  if self.ui_invalidate then self.ui_invalidate() end
   local new_burst=not self.dirty
   if new_burst and not self.history_lock and self.last_committed and not self.checkpoint_task then
     -- last_committed is already an immutable snapshot; transferring its
@@ -719,8 +719,13 @@ function Controller:apply_groove(value)
 end
 
 function Controller:queue_pad_controls(index,immediate)
-  self.pending_pad_controls[index or self.selected_pad]=true
-  self:mark_dirty(false,false)
+  local target=index or self.selected_pad
+  local already_pending=self.pending_pad_controls[target]==true
+  self.pending_pad_controls[target]=true
+  -- A continuous gesture can report hundreds of mouse samples. One dirty
+  -- transition is sufficient for undo/persistence; repeating it needlessly
+  -- cancels and reschedules idle work on every rendered frame.
+  if not already_pending then self:mark_dirty(false,false) end
   -- Sampler controls are a small gmem packet; publish them during a waveform
   -- drag so ADSR/fade edits are audible immediately without rebuilding the
   -- sequencer snapshot on every mouse sample.
@@ -752,6 +757,7 @@ function Controller:process_structural_queue(limit)
   if processed>0 then
     local report=lifecycle.reconcile(self.adapter,self.rack,{engine="sampler_bank",sampler_cache=self.sampler_cache,pad_ids=requested,undo_label="ReaDrum: prepare sample pads"})
     self.sampler_cache=report.sampler_cache or self.sampler_cache
+    self.bank_tracks=report.bank_tracks or self.bank_tracks
     self:invalidate_track_cache()
     self:sync_pad_track_names(requested)
     self.status=string.format("Preparing pads: %d remaining",#self.structural_queue)
@@ -762,9 +768,20 @@ end
 
 function Controller:sync_pending_pad_controls()
   local track=self:find_track("sequencer")
+  local any_solo=false
+  for _,candidate in ipairs(self.rack.pads or {}) do if candidate.sample~=false and candidate.sample~=nil and candidate.soloed==true then any_solo=true;break end end
   for index in pairs(self.pending_pad_controls or {}) do
     local pad=self:pad(index)
-    if track and pad and pad.sample~=false then sampler_engine.publish_pad(self.host,track,self.rack,pad,self.sampler_cache[pad.id]) end
+    if track and pad and pad.sample~=false then
+      local audible=pad.muted~=true and(not any_solo or pad.soloed==true)
+      local cache_entry=self.sampler_cache[pad.id]
+      if cache_entry then sampler_engine.publish_pad_controls(self.host,self.rack,pad,cache_entry,audible)
+      else
+        local bank_index=math.floor(((tonumber(pad.logical_index)or 1)-1)/16)
+        local worker=self:find_track("bank",tostring(bank_index))
+        if worker then sampler_engine.publish_pad(self.host,worker,self.rack,pad,nil) end
+      end
+    end
   end
   self.pending_pad_controls={}
 end
@@ -854,6 +871,7 @@ function Controller:flush(force,options)
       local filter=next(self.structural_pad_ids or {}) and self.structural_pad_ids or nil
       local report=lifecycle.reconcile(self.adapter,self.rack,{engine="sampler_bank",sampler_cache=self.sampler_cache,pad_ids=filter,delete_empty_tracks=options.delete_empty_tracks==true,undo_label=options.undo_label})
       self.sampler_cache=report.sampler_cache or self.sampler_cache
+      self.bank_tracks=report.bank_tracks or self.bank_tracks
       self:invalidate_track_cache()
       self:sync_pad_track_names(filter)
     end
@@ -900,11 +918,15 @@ function Controller:sync_live_bank()
   -- Banks are visual pages. Every pad owns one unique MIDI note and route.
 end
 
-function Controller:set_playback_mode(mode)
+function Controller:set_playback_mode(mode,record_history)
   mode=mode=="items" and "events" or mode
   if mode~="events" and mode~="rendered" then mode="continuous" end
   if self.rack.playback_mode==mode then return end
-  self.rack.playback_mode=mode;self:mark_dirty(false);self:flush(true)
+  self.rack.playback_mode=mode
+  local previous_history_lock=self.history_lock
+  if record_history==false then self.history_lock=true end
+  self:mark_dirty(false);self:flush(true)
+  self.history_lock=previous_history_lock
   self.status=mode=="events" and "Variation events gate playback" or (mode=="rendered" and "Rendered MIDI owns playback" or "Continuous variation playback")
 end
 
@@ -940,7 +962,7 @@ function Controller:create_variation_event()
   end,debug.traceback)
   self.host.PreventUIRefresh(-1);self.host.Undo_EndBlock2(self.project,"ReaDrum: create variation event",ok and -1 or 0);self.host.UpdateArrange()
   if not ok then self.status="Variation event error: "..tostring(failure);return end
-  self:set_playback_mode("events");self.status="Variation event created"
+  self:set_playback_mode("events",false);self.status="Variation event created"
 end
 
 local function rational_value(value)
@@ -1037,10 +1059,13 @@ function Controller:render_variation_to_midi()
     active_channels_by_pad[note.pad]=active;active[channel]=math.max(active[channel] or -math.huge,note.end_qn)
   end
   local start_time=self.host.GetCursorPositionEx and self.host.GetCursorPositionEx(self.project) or self.host.GetCursorPosition()
-  local start_qn=self.host.TimeMap2_timeToQN(self.project,start_time);local packet_lead_qn=1/960
-  local item_start_time=self.host.TimeMap2_QNToTime(self.project,start_qn-packet_lead_qn);local end_relative=length_qn
-  for _,note in ipairs(notes) do end_relative=math.max(end_relative,note.end_qn) end
-  local end_time=self.host.TimeMap2_QNToTime(self.project,start_qn+end_relative)
+  local start_qn=self.host.TimeMap2_timeToQN(self.project,start_time)
+  -- The arrange item represents the pattern cycle, not its longest note gate.
+  -- Keep both edges exactly on the requested pattern bounds. Performance CCs
+  -- for clock-zero notes share the first PPQ position instead of growing a
+  -- hidden pre-roll, and note tails remain source data clipped by the item.
+  local item_start_time=start_time
+  local end_time=self.host.TimeMap2_QNToTime(self.project,start_qn+length_qn)
   self.host.Undo_BeginBlock2(self.project);self.host.PreventUIRefresh(1)
   local ok,failure=xpcall(function()
     local item=assert(self.host.CreateNewMIDIItemInProj(track,item_start_time,end_time,false),"could not create MIDI item")
@@ -1080,7 +1105,7 @@ function Controller:render_variation_to_midi()
   end,debug.traceback)
   self.host.PreventUIRefresh(-1);self.host.Undo_EndBlock2(self.project,"ReaDrum: create variation MIDI",ok and -1 or 0);self.host.UpdateArrange()
   if not ok then self.status="Could not insert MIDI: "..tostring(failure);return end
-  self:set_playback_mode("rendered")
+  self:set_playback_mode("rendered",false)
   self.status=string.format("Inserted %d editable MIDI notes at the edit cursor",#notes)
 end
 
@@ -1178,7 +1203,10 @@ function Controller:save_kit()
   local file,err=io.open(path,"wb");if not file then self.status="Could not save kit: "..tostring(err);return end;file:write(json.encode(self.rack));file:close();self.status="Kit saved"
 end
 function Controller:load_kit()
-  local ok,path=self.host.GetUserFileNameForRead("Load ReaDrum Kit","","ReaDrum Kit (*.readrum)\0*.readrum\0");if not ok or path==""then return end
+  -- GetUserFileNameForRead expects an extension list, not a Windows
+  -- description/pattern filter pair. Supplying embedded NULs makes REAPER
+  -- construct a malformed filter that hides valid .readrum kits.
+  local ok,path=self.host.GetUserFileNameForRead("Load ReaDrum Kit","",".readrum");if not ok or path==""then return end
   local file,err=io.open(path,"rb");if not file then self.status="Could not load kit: "..tostring(err);return end;local raw=file:read("*a");file:close()
   local decoded;ok,decoded=pcall(json.decode,raw);if not ok then self.status="Invalid kit: "..tostring(decoded);return end;local valid,why=model.validate_rack(decoded);if not valid then self.status="Invalid kit: "..tostring(why);return end
   self.undo_stack[#self.undo_stack+1]=state.compact(self.rack);self.rack=decoded;self.pattern_index=1;self.variation_index=1;self.selected_pad=1;self.selected_step=1;self.dirty=true;self.structural_dirty=true;self.publish_dirty=true;self.variation_events_dirty=true;self.structural_pad_ids={};self.due=0;self:flush(true);self.status="Kit loaded"
@@ -2141,13 +2169,33 @@ function Controller:restore_history(snapshot,target)
   local function sample_path(sample)return type(sample)=="table" and sample.path or sample end
   for index=1,math.max(#(current.pads or {}),#(rack.pads or {})) do
     local before,after=current.pads[index],rack.pads[index]
-    if not before or not after or before.id~=after.id or before.logical_index~=after.logical_index or sample_path(before.sample)~=sample_path(after.sample) then
+    if not before or not after or before.id~=after.id or before.logical_index~=after.logical_index or
+        before.output_id~=after.output_id or sample_path(before.sample)~=sample_path(after.sample) then
       if before then structural_ids[before.id]=true end;if after then structural_ids[after.id]=true end
     end
+  end
+  -- Logical outputs are physical routing topology. Restoring their list must
+  -- create/remove the corresponding output tracks and worker sends, not just
+  -- change the number shown on the pad.
+  local function output_signature(outputs)
+    local parts={}
+    for index,output in ipairs(outputs or {}) do parts[index]=table.concat({output.id or "",output.name or ""},"\0") end
+    return table.concat(parts,"\1")
+  end
+  if output_signature(current.outputs)~=output_signature(rack.outputs) then
+    for _,pad in ipairs(current.pads or {}) do structural_ids[pad.id]=true end
+    for _,pad in ipairs(rack.pads or {}) do structural_ids[pad.id]=true end
   end
   -- Stack entries stop being mutable as soon as they leave self.rack, so move
   -- the snapshots between stacks instead of cloning the complete rack twice.
   target[#target+1]=state.compact(current);self.history_lock=true;self.rack=rack
+  -- Sampler-bank controls live outside the serialized rack snapshot. Queue a
+  -- fresh packet for every loaded pad so Undo/Redo cannot leave gain, ADSR,
+  -- pitch, or especially output-pair routing at the value being undone.
+  self.pending_pad_controls={}
+  for index,pad in ipairs(self.rack.pads or {}) do
+    if pad.sample~=false and pad.sample~=nil then self.pending_pad_controls[index]=true end
+  end
   self.pattern_index=math.min(self.rack.selected_pattern or 1,#self.rack.patterns);self.variation_index=math.min(self.rack.selected_variation or 1,#self:pattern().variations)
   self.selected_pad=math.min(self.selected_pad,#self.rack.pads);self.selected_step=math.min(self.selected_step,self:lane().step_count)
   self.dirty=true;self.structural_dirty=next(structural_ids)~=nil;self.publish_dirty=true;self.variation_events_dirty=true;self.structural_pad_ids=structural_ids

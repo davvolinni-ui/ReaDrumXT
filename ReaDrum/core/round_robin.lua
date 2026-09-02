@@ -1,4 +1,3 @@
--- @noindex
 local RoundRobin = {}
 
 local Group = {}

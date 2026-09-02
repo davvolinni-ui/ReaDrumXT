@@ -1,4 +1,3 @@
--- @noindex
 local M={VERSION=1,SECTION="ReaDrumXT"}
 
 local function clean(value)

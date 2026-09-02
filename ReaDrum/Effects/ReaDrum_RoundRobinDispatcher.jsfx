@@ -1,4 +1,3 @@
-// @noindex
 desc:ReaDrum Round Robin Dispatcher (Phase 3A protocol v1)
 options:gmem=ReaDrumSnapshot
 slider1:0<0,65535,1>-magic
@@ -150,7 +149,10 @@ function release_all(note,sample_offset)local(i,o,p,voice,token)(i=0;loop(1024,o
 function release_oldest(note,sample_offset)local(i,o,p,oldest,j,oo,other,token)(oldest=HUGE;i=0;loop(1024,o=i*4;0[o]&&0[o+2]==note&&0[o+3]<oldest?oldest=0[o+3];i+=1;);oldest<HUGE?(token=-(oldest+1);i=0;loop(1024,o=i*4;0[o]&&0[o+2]==note&&0[o+3]==oldest?(p=0[o+1];0[o]=0;other=0;j=0;loop(1024,oo=j*4;0[oo]&&0[oo+1]==p?other=1;j+=1;);!other&&ACTIVESEQ[p]==token?(pad_live_gated(p)?(midi_bus=floor(p/16);midisend(sample_offset,0x80|(p%16),ACTIVENOTE[p],0););ACTIVESEQ[p]=0;ACTIVENOTE[p]=ROOT_NOTE;););i+=1;);););
 // Choke through a normal note-off so RS5K can apply its short anti-click
 // release. CC120/123 hard-killed the waveform at an arbitrary sample value.
-function pad_choke(pad,sample_offset)(pad>=0&&pad<128?(release_piano_range(pad,sample_offset);ACTIVESEQ[pad]=0;1;):0;);
+// A pad owns at most one current sampler note.  Choking an idle pad must be a
+// no-op: broadcasting the full 25-note piano range for every sequenced hit
+// multiplies a 128-pad downbeat into thousands of unnecessary MIDI events.
+function pad_choke(pad,sample_offset)local(active)(active=pad>=0&&pad<128&&ACTIVESEQ[pad]!=0;active?(midi_bus=floor(pad/16);midisend(sample_offset,0x80|(pad%16),ACTIVENOTE[pad],0);ACTIVESEQ[pad]=0;ACTIVENOTE[pad]=ROOT_NOTE;);active;);
 // Per-pad counters preserve simultaneous triggers until the UI can poll them.
 // The legacy last-pad sliders remain populated for older script versions.
 function pad_flash(pad)(slider87=pad+1;slider88=(slider88%16777214)+1;gmem[1400000+pad]=(gmem[1400000+pad]%16777214)+1;);
@@ -210,7 +212,10 @@ function budget_pending()local(ok,pos,tag,rec_len,f,cur,active,expected,seen,ste
  ok=1;groove_maximum=0;groove_amount=0;slider45=0;slider46=0;slider47=0;slider48=0;slider49=0;slider50=0;slider51=0;slider52=0;slider53=0;
  memset(BUDGET_LINKS,0,128);
  map_pending_words<16?(ok=0;slider53=7;);
- ok?(block_qn=0;i=0;loop(950000[10]-1,p=12+i*2;q0=950000[p];t0=950000[p+1];q1=950000[p+2];t1=950000[p+3];span=(q1-q0)/(t1-t0)*MAX_BLOCK_SAMPLES/srate;span>block_qn?block_qn=span;i+=1;);block_qn=ceil(block_qn*1000000)/1000000;slider52=block_qn*1000000;recon_qn=max(0,950000[7])+1;block_qn>1?(ok=0;slider53=1;););
+ // Runtime discontinuity recovery backs up by one audio block, not by the
+ // transport map's complete QN horizon.  Using qn_end here rejected dense
+ // 128-lane snapshots while silently retaining the preceding revision.
+ ok?(block_qn=0;i=0;loop(950000[10]-1,p=12+i*2;q0=950000[p];t0=950000[p+1];q1=950000[p+2];t1=950000[p+3];span=(q1-q0)/(t1-t0)*MAX_BLOCK_SAMPLES/srate;span>block_qn?block_qn=span;i+=1;);block_qn=ceil(block_qn*1000000)/1000000;slider52=block_qn*1000000;recon_qn=block_qn;block_qn>1?(ok=0;slider53=1;););
  pos=17;cur=0;active=0;expected=0;seen=0;ended=0;
  loop(pending_words-16,
   ok&&!ended?(
@@ -387,7 +392,7 @@ function commit_staged(q0,q1)local(i,o,b,s,on,seq,pad,note,vel,pan,gate,off,cent
     queue_seq=stage_seq;i=0;loop(lane_count,b=i*LANE_WORDS;s=i*SHADOW_LANE_WORDS;LANES[b+9]=SHADOW_LANES[s];LANES[b+10]=SHADOW_LANES[s+1];i+=1;);
     memset(LEGATO,0,128);
     i=0;loop(stage_off_count,o=i*OFFQ_WORDS;d=STAGE_OFF[o];seq=STAGE_OFF[o+1];pad=STAGE_OFF[o+2];token=seq+1;newer=0;j=0;loop(stage_emit_count,e=j*ONQ_WORDS;STAGE_EMIT[e+2]==pad&&STAGE_EMIT[e+5]>=1900&&abs(STAGE_EMIT[e]-d)<=0.0000001?newer=1;j+=1;);newer?(LEGATO[pad]=1;);ACTIVESEQ[pad]==token&&!newer?(off=floor((map_time(d)-play_position)*srate+.5);off=max(0,min(samplesblock-1,off));midi_bus=floor(pad/16);midisend(off,0x80|(pad%16),STAGE_OFF[o+3],0);ACTIVESEQ[pad]=0;ACTIVENOTE[pad]=ROOT_NOTE;);i+=1;);
-    i=0;loop(stage_emit_count,o=i*ONQ_WORDS;on=STAGE_EMIT[o];seq=STAGE_EMIT[o+1];pad=STAGE_EMIT[o+2];note=STAGE_EMIT[o+3];vel=STAGE_EMIT[o+4];off=floor((map_time(on)-play_position)*srate+.5);off=max(0,min(samplesblock-1,off));vel<=0?(pad_choke(pad,off);):(cents=floor(note/128)-100;note=note%128;bend=max(0,min(16383,floor(8192+cents*4096/100+.5)));pan=STAGE_EMIT[o+5];slide=pan>=1900;slide?(pan-=2000;);shift=0;pan>=1001?(shift=max(0,min(1,pan-1001));pan=1001;):(pan_base=floor(pan);shift=max(0,min(1,(pan-pan_base)*1000));pan=pan_base;);gate=STAGE_EMIT[o+6];LEGATO[pad]=slide&&ACTIVESEQ[pad]!=0;choke_at=off>0?off-1:off;did=pad_apply_choke(pad,choke_at);note_at=did&&off==0?min(samplesblock-1,1):off;base_pan=PADMAP[pad*PAD_WORDS+12];wanted_pan=pan==1001?base_pan:pan;pan_delta=max(-100,min(100,wanted_pan-base_pan));ACTIVESEQ[pad]=seq+1;ACTIVENOTE[pad]=note;midi_bus=floor(pad/16);midisend(note_at,$xE0|(pad%16),bend%128,floor(bend/128));midisend(note_at,$xB0|(pad%16),10,max(1,min(127,floor(64+pan_delta*63/100+.5))));midisend(note_at,$xB0|(pad%16),68,LEGATO[pad]?127:0);midisend(note_at,$xB0|(pad%16),74,max(0,min(127,floor(shift*127+.5))));midisend(note_at,$x90|(pad%16),note,vel);pad_flash(pad);gate==0?(midisend(note_at,$x80|(pad%16),note,0);ACTIVESEQ[pad]=0;ACTIVENOTE[pad]=ROOT_NOTE;););i+=1;);
+    i=0;loop(stage_emit_count,o=i*ONQ_WORDS;on=STAGE_EMIT[o];seq=STAGE_EMIT[o+1];pad=STAGE_EMIT[o+2];note=STAGE_EMIT[o+3];vel=STAGE_EMIT[o+4];off=floor((map_time(on)-play_position)*srate+.5);off=max(0,min(samplesblock-1,off));vel<=0?(pad_choke(pad,off);):(cents=floor(note/128)-100;note=note%128;bend=max(0,min(16383,floor(8192+cents*4096/100+.5)));pan=STAGE_EMIT[o+5];slide=pan>=1900;slide?(pan-=2000;);shift=0;pan>=1001?(shift=max(0,min(1,pan-1001));pan=1001;):(pan_base=floor(pan);shift=max(0,min(1,(pan-pan_base)*1000));pan=pan_base;);gate=STAGE_EMIT[o+6];LEGATO[pad]=slide&&ACTIVESEQ[pad]!=0;choke_at=off>0?off-1:off;did=pad_apply_choke(pad,choke_at);note_at=(did||disc)&&off==0?min(samplesblock-1,1):off;base_pan=PADMAP[pad*PAD_WORDS+12];wanted_pan=pan==1001?base_pan:pan;pan_delta=max(-100,min(100,wanted_pan-base_pan));ACTIVESEQ[pad]=seq+1;ACTIVENOTE[pad]=note;midi_bus=floor(pad/16);midisend(note_at,$xE0|(pad%16),bend%128,floor(bend/128));midisend(note_at,$xB0|(pad%16),10,max(1,min(127,floor(64+pan_delta*63/100+.5))));midisend(note_at,$xB0|(pad%16),68,LEGATO[pad]?127:0);midisend(note_at,$xB0|(pad%16),74,max(0,min(127,floor(shift*127+.5))));midisend(note_at,$x90|(pad%16),note,vel);pad_flash(pad);gate==0?(midisend(note_at,$x80|(pad%16),note,0);ACTIVESEQ[pad]=0;ACTIVENOTE[pad]=ROOT_NOTE;););i+=1;);
     due_offs(q0,q1);
   );
   stage_fault?(latch_stage_fault(););!stage_fault;
@@ -497,11 +502,15 @@ while(midirecv(off,m1,m2,m3))(
     st==176&&m2==10?(INPUT_PAN[ch]=(m3*200/127)-100):
     st==176&&m2==68?(INPUT_SLIDE[ch]=m3>0):
     st==176&&m2==74?(INPUT_SHIFT[ch]=max(0,min(1,m3/127))):
-    st==144&&m3>0&&live_pad>=0?(input_total=(INPUT_BEND[ch]-8192)*24/8192;input_transpose=floor(input_total+(input_total>=0?.5:-.5));input_cents=(input_total-input_transpose)*100;performance_emit(off,live_pad,input_key,m3|0,input_transpose,input_cents,INPUT_PAN[ch],INPUT_SLIDE[ch],INPUT_SHIFT[ch],INPUT_GLIDE[ch])):
+    // At a host loop wrap, offset-zero reset messages must reach the bank
+    // workers before the first reconstructed MIDI-file note.  Give only that
+    // boundary note one sample of ordering space; cold starts and all other
+    // host MIDI retain their exact offsets.
+    st==144&&m3>0&&live_pad>=0?(input_total=(INPUT_BEND[ch]-8192)*24/8192;input_transpose=floor(input_total+(input_total>=0?.5:-.5));input_cents=(input_total-input_transpose)*100;host_note_at=disc&&off==0?min(samplesblock-1,1):off;performance_emit(host_note_at,live_pad,input_key,m3|0,input_transpose,input_cents,INPUT_PAN[ch],INPUT_SLIDE[ch],INPUT_SHIFT[ch],INPUT_GLIDE[ch])):
     (st==128||(st==144&&m3==0))&&live_pad>=0?release_oldest(input_key,off):
     midisend(off,m1,m2,m3);
   ):(
-    valid&&st==144&&m3>0?(pass=slider6>=PPM||(slider6>0&&((rnd()-1)%PPM)<slider6);pass?(idx=choose();pad=member_at(idx)-1;pad>=0?(voice=(slider88%16777214)+1;alloc(pad,m2,voice);ACTIVESEQ[pad]=-(voice+1);ACTIVENOTE[pad]=m2;midi_bus=floor(pad/16);midisend(off,0x90|(pad%16),m2,m3);pad_flash(pad););):slider9?choose();):valid&&(st==128||(st==144&&m3==0))?release_oldest(m2,off):midisend(off,m1,m2,m3);
+    valid&&st==144&&m3>0?(pass=slider6>=PPM||(slider6>0&&((rnd()-1)%PPM)<slider6);pass?(idx=choose();pad=member_at(idx)-1;pad>=0?(voice=(slider88%16777214)+1;alloc(pad,m2,voice);ACTIVESEQ[pad]=-(voice+1);ACTIVENOTE[pad]=m2;host_note_at=disc&&off==0?min(samplesblock-1,1):off;midi_bus=floor(pad/16);midisend(host_note_at,0x90|(pad%16),m2,m3);pad_flash(pad););):slider9?choose();):valid&&(st==128||(st==144&&m3==0))?release_oldest(m2,off):midisend(off,m1,m2,m3);
   );
 );
 arrangement_gate!=gate_before&&slider67>=1.5?(reset_state(1);reset_schedule_history(1););
