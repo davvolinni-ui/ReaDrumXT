@@ -1,3 +1,4 @@
+-- @noindex
 local M = {}
 
 M.TIME_TAPER = 3

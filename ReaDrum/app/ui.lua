@@ -1,3 +1,4 @@
+-- @noindex
 local state = require("ReaDrum.app.state")
 local model = require("ReaDrum.core.model")
 local theme = require("ReaDrum.app.theme")

@@ -1,3 +1,4 @@
+-- @noindex
 -- Boundary for the headless 16-pad JSFX playback engine. The saved ReaDrum
 -- model remains authoritative; this module only publishes reconstructable
 -- runtime allocations and control state.

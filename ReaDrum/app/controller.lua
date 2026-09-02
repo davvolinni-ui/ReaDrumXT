@@ -1,3 +1,4 @@
+-- @noindex
 local model = require("ReaDrum.core.model")
 local json = require("ReaDrum.core.json")
 local clipboard = require("ReaDrum.core.clipboard")
