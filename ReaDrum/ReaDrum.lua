@@ -1,5 +1,5 @@
 -- @description ReaDrumXT - Native Drum Machine and Step Sequencer
--- @version 0.1.0-alpha
+-- @version 0.1.2
 local source = debug.getinfo(1, "S").source:sub(2)
 local scripts = assert(source:match("^(.*)[/\\]ReaDrum[/\\]ReaDrum%.lua$"), "ReaDrum must remain inside Scripts/ReaDrum")
 package.path = scripts .. "/?.lua;" .. scripts .. "/?/init.lua;" .. package.path
