@@ -311,6 +311,7 @@ function UI:bind_app(app)
   if self.app and self.app.groove_preview then self.app:cancel_groove_preview(true) end
   self.app=app
   app.audition_notes=self.audition_enabled~=false
+  app.max_outputs=self.max_outputs
   self.selected_pads={}
   self.pad_flash_until={};self.pad_trigger_tokens=false;self.engine_trigger_token=false;self.recent_midi_signature=false
   self.audition_due=false;self.paint_active=false;self.paint_lane=false;self.paint_last_step=false

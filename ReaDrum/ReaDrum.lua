@@ -1,8 +1,8 @@
 -- @description ReaDrumXT - Drum Sampler and Polymetric Step Sequencer
--- @version 0.1.3
+-- @version 0.1.4
 -- @author davvolinni-ui
 -- @changelog
---   Fixed pad audio routing when sampler controls are lost during a live update.
+--   Fixed stereo output selections 9-16 routing to output 8.
 -- @link
 --   Support https://forum.cockos.com/showthread.php?t=310870
 --   Repository https://github.com/davvolinni-ui/ReaDrumXT

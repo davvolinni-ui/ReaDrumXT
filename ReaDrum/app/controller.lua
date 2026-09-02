@@ -1662,7 +1662,10 @@ function Controller:show_track_fx_chain(track)
   self.host.TrackFX_Show(track,0,1);return true
 end
 function Controller:set_pad_output_number(indices,number)
-  number=math.max(1,math.min(self.max_outputs==16 and 16 or 8,math.floor(tonumber(number) or 1)))
+  -- The UI preference controls how many choices are displayed. Keep the
+  -- controller's model validation at the engine's actual 16-output limit so a
+  -- newly bound project cannot silently collapse outputs 9-16 to output 8.
+  number=math.max(1,math.min(16,math.floor(tonumber(number) or 1)))
   local id=number==1 and "main" or "output_"..number;local found=false
   for _,output in ipairs(self.rack.outputs or {}) do if output.id==id then found=true;break end end
   if not found then self.rack.outputs[#self.rack.outputs+1]=model.new_output({id=id,name=number==1 and "Main" or "Output "..number}) end
