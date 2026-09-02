@@ -71,6 +71,12 @@ function M.live(host, bank, slot, namespace)
   }
 end
 
+function M.control_revision(host,bank,slot,namespace)
+  attach(host)
+  slot=integer(slot,"slot",0,15)
+  return math.floor((host.gmem_read(base(bank,namespace)+M.CONTROL_OFFSET+slot*M.CONTROL_WORDS)or 0)+0.5)
+end
+
 function M.audition(host, bank, slot, note, velocity, namespace)
   attach(host)
   slot=integer(slot,"slot",0,15)

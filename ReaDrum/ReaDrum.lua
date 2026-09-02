@@ -1,5 +1,6 @@
 -- @description ReaDrumXT - Native Drum Machine and Step Sequencer
--- @version 0.1.2
+-- @version 0.1.3
+-- @changelog Fix pad audio routing when sampler controls are lost during a live update.
 local source = debug.getinfo(1, "S").source:sub(2)
 local scripts = assert(source:match("^(.*)[/\\]ReaDrum[/\\]ReaDrum%.lua$"), "ReaDrum must remain inside Scripts/ReaDrum")
 package.path = scripts .. "/?.lua;" .. scripts .. "/?/init.lua;" .. package.path

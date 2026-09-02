@@ -788,6 +788,18 @@ end
 
 function Controller:poll_sampler_loads(limit)
   local result=sampler_engine.poll(self.host,self:find_track("sequencer"),self.sampler_cache,limit or 4)
+  local repaired=0
+  for index,pad in ipairs(self.rack.pads or {}) do
+    if repaired<(limit or 4) and pad.sample~=false and pad.sample~=nil then
+      local logical=math.max(1,math.floor(tonumber(pad.logical_index)or index))-1
+      local bank_index,slot_index=math.floor(logical/16),logical%16
+      if sampler_bank.control_revision(self.host,bank_index,slot_index,self.rack.engine_namespace or 0)==0 then
+        sampler_engine.publish_pad_controls(self.host,self.rack,pad,self.sampler_cache[pad.id])
+        repaired=repaired+1
+      end
+    end
+  end
+  result.controls_repaired=repaired
   if result.failed>0 then self.status="Retrying a sample that failed to decode" end
   return result
 end

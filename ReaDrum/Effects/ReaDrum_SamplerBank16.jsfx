@@ -193,7 +193,11 @@ function reset_controls(slot)local(c)(
   CTRL[c+12]=1;    // self choke
   CTRL[c+13]=0;    // choke group
   CTRL[c+14]=0;    // obey note-offs (0=One Shot, 1=Gate)
-  CTRL[c+15]=slot; // output stereo pair
+  // A bank can be recompiled while the Lua controller is still running. Until
+  // it republishes this slot's control packet, keep every pad audible through
+  // the rack's guaranteed Output 1 instead of sending slots 2-16 to channel
+  // pairs that may not have an output track.
+  CTRL[c+15]=0;    // output stereo pair
   CTRL[c+16]=0;    // minimum velocity amplitude
   CTRL[c+17]=0.002;// boundary fade in seconds
   CTRL[c+18]=0.005;// boundary fade out seconds
@@ -440,6 +444,11 @@ i=0;loop(SLOTS,
   src=bank_base+CONTROL_OFFSET+i*CONTROL_WORDS;revision=gmem[src];c=ctrl(i,0);
   revision!=CTRL[c] ? (
     j=0;loop(CTRL_WORDS,CTRL[c+j]=gmem[src+j];j+=1;);
+  ) : revision==0 ? (
+    // ext_noinit preserves local controls through a live source update. If
+    // the controller mailbox is absent, override any preserved legacy
+    // slot-per-output fallback so every pad reaches guaranteed Output 1.
+    CTRL[c+15]=0;
   );
   mask=gmem[bank_base+AUDIO_MASK_OFFSET+i];target=mask==1?0:1;
   target!=AUDIBLE_TARGET[i]?mask_ramp_active=1;
