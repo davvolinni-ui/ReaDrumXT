@@ -1,8 +1,8 @@
 -- @description ReaDrumXT - Drum Sampler and Polymetric Step Sequencer
--- @version 0.1.4
+-- @version 0.1.5
 -- @author davvolinni-ui
 -- @changelog
---   Fixed stereo output selections 9-16 routing to output 8.
+--   Added live control updates, piano-roll selection and legato tools, and drag edge-scrolling.
 -- @link
 --   Support https://forum.cockos.com/showthread.php?t=310870
 --   Repository https://github.com/davvolinni-ui/ReaDrumXT

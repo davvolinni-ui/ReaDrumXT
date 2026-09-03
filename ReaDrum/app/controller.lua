@@ -1400,6 +1400,26 @@ function Controller:rotate_lane(amount)
   local lane=self:lane();local result={};for index=1,lane.step_count do local target=((index-1+amount)%lane.step_count)+1;result[target]=lane.steps[index]end;lane.steps=result;self:mark_dirty(false)
 end
 function Controller:reverse_lane()local lane=self:lane();for left=1,math.floor(lane.step_count/2)do local right=lane.step_count-left+1;lane.steps[left],lane.steps[right]=lane.steps[right],lane.steps[left]end;self:mark_dirty(false)end
+function Controller:legato_steps(indices)
+  local lane=self:lane();local selected={};local selected_count=0
+  for _,index in ipairs(indices or {}) do
+    index=math.floor(tonumber(index)or 0)
+    if index>=1 and index<=lane.step_count and lane.steps[index].enabled and not selected[index] then selected[index]=true;selected_count=selected_count+1 end
+  end
+  if selected_count==0 then self.status="Select one or more piano-roll notes first";return false end
+  local starts={};for index,step in ipairs(lane.steps)do if step.enabled then starts[#starts+1]=index end end
+  local changed=0
+  for position,index in ipairs(starts)do
+    if selected[index]then
+      local next_start=starts[position+1]or(lane.step_count+1)
+      local gate=math.max(100,(next_start-index)*100)
+      if lane.steps[index].gate~=gate then lane.steps[index].gate=gate;changed=changed+1 end
+    end
+  end
+  if changed>0 then self:mark_dirty(false)end
+  self.status=string.format("Legato extended %d selected note%s",selected_count,selected_count==1 and ""or"s")
+  return true
+end
 function Controller:randomize_lane(density)
   local lane=self:lane();density=density or 50;for _,step in ipairs(lane.steps)do step.enabled=math.random(100)<=density;step.velocity=math.random(72,127)end;self:mark_dirty(false)
 end
@@ -1600,7 +1620,19 @@ function Controller:active_outputs()
 end
 function Controller:set_output_aux_send(output,key,value)
   if not output or (key~="aux_a_send" and key~="aux_b_send") then return false end
-  output[key]=math.max(0,math.min(1,tonumber(value)or 0));self:mark_dirty(true);return true
+  output[key]=math.max(0,math.min(1,tonumber(value)or 0))
+  -- Keep output-send knobs audible during a drag. Structural reconciliation
+  -- still creates or repairs missing sends after release.
+  local source=self:output_track(output.id)
+  local destination=self:aux_track(key=="aux_a_send" and "aux_a" or "aux_b")
+  if source and destination then
+    for send=0,self.adapter:send_count(source)-1 do
+      if self.adapter:send_destination(source,send)==destination then
+        self.adapter:set_send_value(source,send,"D_VOL",output[key]);break
+      end
+    end
+  end
+  self:mark_dirty(true);return true
 end
 function Controller:track_value(track,key,default)
   if not track then return default or 0 end

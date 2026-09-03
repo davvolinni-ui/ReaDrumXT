@@ -346,7 +346,8 @@ function start_voice(slot,note,vel)local(storage,m,c,v,frames,startf,endf,rate,s
       a=max(0,CTRL[c+5]);d=max(0,CTRL[c+6]);sus=clamp01(CTRL[c+7]);out=max(0,min(15,CTRL[c+15]|0));
       b=voice(v,0);VOICES[b]=1;VOICES[b+1]=slot;VOICES[b+2]=note;
       VOICES[b+3]=startf;VOICES[b+4]=endf;VOICES[b+5]=start_rate;
-      VOICES[b+6]=gain*left;VOICES[b+7]=gain*right;VOICES[b+8]=out;
+      // Keep raw velocity so live gain/pan edits can be applied to this voice.
+      VOICES[b+6]=vel;VOICES[b+7]=0;VOICES[b+8]=out;
       VOICES[b+9]=a>0?0:1;VOICES[b+10]=a>0?1:(d>0?2:0);
       VOICES[b+11]=sus;VOICES[b+12]=voice_clock;VOICES[b+13]=a>0?1/(a*srate):(d>0?(1-sus)/(d*srate):0);
       VOICES[b+14]=META[m]|0;VOICES[b+15]=META[m+2]|0;VOICES[b+16]=storage;VOICES[b+17]=startf;VOICES[b+18]=rate;
@@ -367,6 +368,28 @@ function note_off(slot,note)local(v,rel)(
       VOICES[voice(v,0)] && VOICES[voice(v,1)]==slot && VOICES[voice(v,2)]==note ? release_voice(v,max(rel,0.001));
       v+=1;
     );
+  );
+);
+
+// Controls are copied from gmem at block boundaries. Refresh parameters that
+// belong to voices already sounding so mixer/inspector drags are audible now,
+// not only on the next trigger. Sample boundaries remain fixed per voice to
+// avoid discontinuous jumps through the source while trimming.
+function refresh_slot_voices(slot)local(v,b,c,rate,a,d,sus,stage,env,remaining)(
+  c=ctrl(slot,0);v=0;
+  loop(active_voice_limit,
+    b=voice(v,0);
+    VOICES[b]&&VOICES[b+1]==slot ? (
+      rate=pow(2,(VOICES[b+2]-69+CTRL[c+3]+(CTRL[c+4]+PITCH_CENTS[slot])/100)/12);
+      remaining=max(1,VOICES[b+20]);
+      VOICES[b+20]>0?(VOICES[b+18]=rate;VOICES[b+19]=(rate-VOICES[b+5])/remaining;):(VOICES[b+5]=rate;VOICES[b+18]=rate;);
+      VOICES[b+8]=max(0,min(15,CTRL[c+15]|0));
+      a=max(0,CTRL[c+5]);d=max(0,CTRL[c+6]);sus=clamp01(CTRL[c+7]);
+      VOICES[b+11]=sus;stage=VOICES[b+10]|0;env=VOICES[b+9];
+      stage==1?(a>0?VOICES[b+13]=1/(a*srate):(VOICES[b+9]=1;VOICES[b+10]=d>0?2:0;VOICES[b+13]=d>0?(1-sus)/(d*srate):0;)):
+      stage==2?(d>0?VOICES[b+13]=max(0,1-sus)/(d*srate):(VOICES[b+9]=sus;VOICES[b+10]=0;VOICES[b+13]=0;));
+    );
+    v+=1;
   );
 );
 
@@ -445,6 +468,7 @@ i=0;loop(SLOTS,
   src=bank_base+CONTROL_OFFSET+i*CONTROL_WORDS;revision=gmem[src];c=ctrl(i,0);
   revision!=CTRL[c] ? (
     j=0;loop(CTRL_WORDS,CTRL[c+j]=gmem[src+j];j+=1;);
+    refresh_slot_voices(i);
   ) : revision==0 ? (
     // ext_noinit preserves local controls through a live source update. If
     // the controller mailbox is absent, override any preserved legacy
@@ -528,7 +552,9 @@ v=0;loop(active_voice_limit,
         fo>0&&pos>endf-fo ? (x=(endf-pos)/fo;fade=min(fade,curve01(x,CTRL[ctrl(slot,20)])););
         VOICES[voice(v,22)]>0?(fade*=sin((1-VOICES[voice(v,22)]/max(1,VOICES[voice(v,21)]))*$pi*.5);VOICES[voice(v,22)]-=1;);
         VOICES[voice(v,23)]>0?(fade*=sin(min(1,VOICES[voice(v,24)]/VOICES[voice(v,23)])*$pi*.5);VOICES[voice(v,24)]+=1;);
-        out_l=sample_l*VOICES[voice(v,6)]*env*fade*AUDIBLE_GAIN[slot];out_r=sample_r*VOICES[voice(v,7)]*env*fade*AUDIBLE_GAIN[slot];
+      c=ctrl(slot,0);gain=CTRL[c+1]*(CTRL[c+16]+(1-CTRL[c+16])*VOICES[b+6]/127);
+      pan=max(-1,min(1,CTRL[c+2]+PAN_STATE[slot]));left=cos((pan+1)*$pi/4);right=sin((pan+1)*$pi/4);
+      out_l=sample_l*gain*left*env*fade*AUDIBLE_GAIN[slot];out_r=sample_r*gain*right*env*fade*AUDIBLE_GAIN[slot];
         SLOT_PEAK_L[slot]=max(SLOT_PEAK_L[slot],abs(out_l));SLOT_PEAK_R[slot]=max(SLOT_PEAK_R[slot],abs(out_r));
         out=VOICES[voice(v,8)]|0;spl(out*2)+=out_l;spl(out*2+1)+=out_r;
         // Keep each logical output's wet feeds separate so they can pass

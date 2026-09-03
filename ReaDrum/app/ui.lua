@@ -202,7 +202,7 @@ function UI.new(host, app)
     host=host, app=app, ctx=host.ImGui_CreateContext("ReaDrumXT", flags), open=true,
     property=1, info_open=false, info_tab="variations", parameter_open=false, editor_mode="properties", lane_toolbar_open=true, inspector_open=true, parameter_height=190, main_view="sequencer",
     inspector_mode="pads", edit_focus="steps", multi_select=false, pad_pitch_mode="transpose",
-    selected_pads={}, pad_flash_until={}, pad_trigger_tokens=false, mixer_clip_until={}, mixer_meter_hold={}, mixer_meter_time={}, engine_trigger_token=false, waveform_cache={}, waveform_duration={}, waveform_queue={}, waveform_queue_set={}, waveform_jobs={}, waveform_failures={}, live_pad_controls_pending=false, next_live_control_sync=0, audition_due=false, audition_token=0, audition_release_token=0, paint_active=false, paint_value=false, paint_button=0, paint_lane=false, paint_last_step=false, paint_accent=false,
+    selected_pads={}, pad_flash_until={}, pad_trigger_tokens=false, mixer_clip_until={}, mixer_meter_hold={}, mixer_meter_time={}, engine_trigger_token=false, waveform_cache={}, waveform_duration={}, waveform_queue={}, waveform_queue_set={}, waveform_jobs={}, waveform_failures={}, live_pad_controls_pending=false, next_live_control_sync=0, next_live_runtime_sync=0, audition_due=false, audition_token=0, audition_release_token=0, paint_active=false, paint_value=false, paint_button=0, paint_lane=false, paint_last_step=false, paint_accent=false,
     property_paint_active=false, property_paint_lane=false, property_paint_key=false, property_paint_position=false, property_paint_value=false,
     property_line_active=false, property_line_lane=false, property_line_key=false, property_line_position=false, property_line_value=false,
     property_reset_active=false, property_reset_lane=false, property_reset_key=false, property_reset_position=false,
@@ -2162,6 +2162,9 @@ function UI:sequence_grid(height)
     if r.ImGui_SetNextWindowContentSize then r.ImGui_SetNextWindowContentSize(c,virtual_width,virtual_height) end
     local lanes_visible=self:begin_unframed("##sequence_lanes",0,math.max(40,lanes_height),flags)
     if lanes_visible then
+    if self.grid_scroll_request_x and r.ImGui_SetScrollX then
+      r.ImGui_SetScrollX(c,self.grid_scroll_request_x);self.grid_scroll_request_x=false
+    end
     local scroll_y=r.ImGui_GetScrollY and r.ImGui_GetScrollY(c) or 0
     local scroll_x_now=r.ImGui_GetScrollX and r.ImGui_GetScrollX(c) or 0
     local viewport_width,viewport_height=r.ImGui_GetWindowSize(c)
@@ -3863,6 +3866,20 @@ function UI:piano_roll_editor(height)
       if self:button("GATE##piano_playback_gate",54,24,gate_mode and C.selected or nil) then
         self:apply_selected_pad_controls({playback_mode="gate"},true)
       end
+      r.ImGui_Dummy(c,1,4)
+      if self:button("SELECT ALL##piano_select_all",92,24) then
+        local selection={};local first
+        for index,step in ipairs(lane.steps)do if step.enabled then selection[index]=true;first=first or index end end
+        self.piano_selected_steps=selection;self.piano_selection_pad=app.selected_pad
+        if first then app.selected_step=first end
+      end
+      self:tooltip("Select every note in this lane")
+      r.ImGui_SameLine(c,0,5)
+      if self:button("LEGATO##piano_legato",76,24) then
+        local selected={};for index in pairs(self.piano_selected_steps)do selected[#selected+1]=index end
+        table.sort(selected);app:legato_steps(selected)
+      end
+      self:tooltip("Extend selected notes to the next note; the final note reaches the lane end")
       r.ImGui_Dummy(c,1,5)
       local glide=math.max(0,math.min(.5,tonumber(piano_controls.glide) or 0))
       local glide_changed,glide_value=self:knob("##piano_glide","GLIDE",glide,0,40,{minimum=0,maximum=.5,wheel_step=.005,formatter=function(v)return v<=0 and "OFF" or string.format("%.0f ms",v*1000)end})
@@ -3885,7 +3902,13 @@ function UI:piano_roll_editor(height)
     r.ImGui_SameLine(c,0,0)
     local piano_visible=self:begin_panel("##piano_canvas_scroll",0,height,0)
     if piano_visible then
-    local available_width=r.ImGui_GetContentRegionAvail(c);local row_height=20;local canvas_height=row_height*row_count;local content_width=available_width
+    local available_width,viewport_height=r.ImGui_GetContentRegionAvail(c);local row_height=20;local canvas_height=row_height*row_count;local content_width=available_width
+    -- Capture the child content viewport before placing the oversized canvas.
+    -- Window bounds include decorations and scrollbars, which made edge-drag
+    -- scrolling miss the actual visible piano-roll edges.
+    local _,viewport_content_top=r.ImGui_GetCursorScreenPos(c)
+    local viewport_scroll_y=r.ImGui_GetScrollY and r.ImGui_GetScrollY(c)or 0
+    local viewport_top=viewport_content_top+viewport_scroll_y;local viewport_bottom=viewport_top+viewport_height
     local start_x,start_y=r.ImGui_GetCursorPosX(c),r.ImGui_GetCursorPosY(c);r.ImGui_InvisibleButton(c,"##piano_roll_canvas",content_width,canvas_height)
     local left,top=r.ImGui_GetItemRectMin(c);local right,bottom=r.ImGui_GetItemRectMax(c)
     local draw=r.ImGui_GetWindowDrawList(c);local scroll_x=self.grid_scroll_x or 0
@@ -4010,6 +4033,41 @@ function UI:piano_roll_editor(height)
       -- Empty-space dragging previews one sustained note. It intentionally
       -- does not paint a trail of independent triggers.
     end
+    local marquee=self.piano_marquee
+    if marquee and r.ImGui_IsMouseDown(c,1) and
+      (math.abs(mouse_x-marquee.start_x)>4 or math.abs(mouse_y-marquee.start_y)>4) then marquee.moved=true end
+    local active_edge_drag=(pointer and pointer.moved and r.ImGui_IsMouseDown(c,0))or
+      (marquee and marquee.moved and r.ImGui_IsMouseDown(c,1))
+    if active_edge_drag then
+      -- Only a real drag can auto-scroll. Clicking or holding near an edge
+      -- remains inert until the pointer has crossed the drag threshold.
+      if r.ImGui_GetScrollY and r.ImGui_SetScrollY then
+        local edge=30;local scroll_y=r.ImGui_GetScrollY(c)
+        local max_scroll=r.ImGui_GetScrollMaxY and r.ImGui_GetScrollMaxY(c)or math.max(0,canvas_height-viewport_height)
+        if mouse_y<viewport_top+edge then
+          local distance=viewport_top+edge-mouse_y
+          r.ImGui_SetScrollY(c,math.max(0,scroll_y-math.max(8,distance*.7)))
+        elseif mouse_y>viewport_bottom-edge then
+          local distance=mouse_y-(viewport_bottom-edge)
+          r.ImGui_SetScrollY(c,math.min(max_scroll,scroll_y+math.max(8,distance*.7)))
+        end
+      end
+      local horizontal_edge=30;local grid_viewport_right=left+available_width
+      local visible_grid_width=math.max(GRID_CELL_STRIDE,grid_viewport_right-grid_clip_left)
+      local max_grid_scroll=math.max(0,lane.step_count*GRID_CELL_STRIDE-visible_grid_width)
+      local next_scroll_x=scroll_x
+      if mouse_x<grid_clip_left+horizontal_edge then
+        local distance=grid_clip_left+horizontal_edge-mouse_x
+        next_scroll_x=math.max(0,scroll_x-math.max(8,distance*.7))
+      elseif mouse_x>grid_viewport_right-horizontal_edge then
+        local distance=mouse_x-(grid_viewport_right-horizontal_edge)
+        next_scroll_x=math.min(max_grid_scroll,scroll_x+math.max(8,distance*.7))
+      end
+      if next_scroll_x~=scroll_x then
+        self.grid_scroll_x=next_scroll_x;self.grid_scroll_request_x=next_scroll_x;scroll_x=next_scroll_x
+        grid_left=left+keyboard_width+3-scroll_x
+      end
+    end
     if pointer and (pointer.mode=="move" or pointer.mode=="resize_left" or pointer.mode=="resize_right" or pointer.mode=="paint") and pointer.moved and r.ImGui_IsMouseDown(c,0) and mouse_x>=grid_clip_left and hover_row>=0 and hover_row<row_count then
       local target_step=math.floor((mouse_x-grid_left)/GRID_CELL_STRIDE)+1;local target_pitch=top_pitch-hover_row
       local step_delta=target_step-pointer.source_step;local pitch_delta=target_pitch-pointer.source_pitch
@@ -4098,10 +4156,22 @@ function UI:piano_roll_editor(height)
       self.piano_pointer=false
     end
     if self.piano_marquee and r.ImGui_IsMouseDown(c,1) then
-      local marquee=self.piano_marquee;local x1,x2=math.min(marquee.start_x,mouse_x),math.max(marquee.start_x,mouse_x);local y1,y2=math.min(marquee.start_y,mouse_y),math.max(marquee.start_y,mouse_y)
+      local marquee=self.piano_marquee
+      -- Edge scrolling keeps a right-drag marquee moving through pitches that
+      -- are outside the current viewport. The source anchor is musical
+      -- step/pitch data, so it remains stable while screen coordinates move.
+      local current_step=math.max(1,math.min(lane.step_count,math.floor((mouse_x-grid_left)/GRID_CELL_STRIDE)+1))
+      local current_pitch=math.max(bottom_pitch,math.min(top_pitch,top_pitch-math.floor((mouse_y-top)/row_height)))
+      local anchor_x=grid_left+(marquee.source_step-1)*GRID_CELL_STRIDE+GRID_CELL_WIDTH*.5
+      local anchor_y=top+(top_pitch-marquee.source_pitch)*row_height+row_height*.5
+      local current_x=grid_left+(current_step-1)*GRID_CELL_STRIDE+GRID_CELL_WIDTH*.5
+      local current_y=top+(top_pitch-current_pitch)*row_height+row_height*.5
+      local x1,x2=math.min(anchor_x,current_x),math.max(anchor_x,current_x);local y1,y2=math.min(anchor_y,current_y),math.max(anchor_y,current_y)
+      if r.ImGui_DrawList_PushClipRect then r.ImGui_DrawList_PushClipRect(draw,grid_clip_left,top,right,bottom,true) end
       r.ImGui_DrawList_AddRectFilled(draw,x1,y1,x2,y2,0x1687D528,1);r.ImGui_DrawList_AddRect(draw,x1,y1,x2,y2,C.playhead,1,0,1)
-      local first_step=math.max(1,math.floor((x1-grid_left)/GRID_CELL_STRIDE)+1);local last_step=math.min(lane.step_count,math.floor((x2-grid_left)/GRID_CELL_STRIDE)+1)
-      local high_pitch=math.max(bottom_pitch,math.min(top_pitch,top_pitch-math.floor((y1-top)/row_height)));local low_pitch=math.max(bottom_pitch,math.min(top_pitch,top_pitch-math.floor((y2-top)/row_height)))
+      if r.ImGui_DrawList_PopClipRect then r.ImGui_DrawList_PopClipRect(draw) end
+      local first_step,last_step=math.min(marquee.source_step,current_step),math.max(marquee.source_step,current_step)
+      local low_pitch,high_pitch=math.min(marquee.source_pitch,current_pitch),math.max(marquee.source_pitch,current_pitch)
       local selection={};for index=first_step,last_step do local note=lane.steps[index];local pitch=math.floor((note.pitch_semitones or 0)+.5);if note.enabled and pitch>=low_pitch and pitch<=high_pitch then selection[index]=true end end
       self.piano_selected_steps=selection
     elseif self.piano_marquee and not r.ImGui_IsMouseDown(c,1) then self.piano_marquee=false end
@@ -4290,15 +4360,28 @@ function UI:frame()
   -- Never do that in the middle of a mouse gesture; commit immediately after
   -- the active control is released instead.
   local control_active=r.ImGui_IsAnyItemActive and r.ImGui_IsAnyItemActive(c)
-  -- Keep REAPER/gmem calls out of the active mouse gesture. Even the compact
-  -- control packet can occasionally block on the host and delay delivery of
-  -- the next UI frame, making waveform handles visibly trail the pointer.
-  -- The model and overlay still update every frame; audio commits on release.
-  if self.live_pad_controls_pending and not control_active then
+  -- Sampler controls use a compact gmem packet, so publish them at a bounded
+  -- rate while dragging. Expensive snapshot rebuilding, reconciliation, undo,
+  -- and persistence remain deferred below until the gesture is complete.
+  -- Always send the final value immediately when the control is released.
+  local live_control_due=not control_active or now>=(self.next_live_control_sync or 0)
+  if self.live_pad_controls_pending and live_control_due then
     section_started=self:perf_begin()
     self.app:sync_pending_pad_controls()
     self.live_pad_controls_pending=false
+    self.next_live_control_sync=now+1/30
     self:perf_end("live control commit",section_started)
+  end
+  -- Sequencer-wide continuous controls (swing, gate, velocity shaping,
+  -- humanize, lane timing, and similar values) live in the runtime snapshot
+  -- rather than the sampler mailbox. Publish a bounded preview while dragging;
+  -- the normal release flush below still owns undo and persistence.
+  if control_active and self.app.dirty and self.app.publish_dirty and not self.app.structural_dirty
+    and now>=(self.next_live_runtime_sync or 0) then
+    section_started=self:perf_begin()
+    self.app:publish_transient_runtime(nil,true)
+    self.next_live_runtime_sync=now+1/20
+    self:perf_end("live runtime commit",section_started)
   end
   section_started=self:perf_begin()
   if not control_active or self.wheel_commit then
