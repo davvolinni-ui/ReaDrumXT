@@ -882,6 +882,15 @@ function UI:pad_control_targets()
   return targets
 end
 
+function UI:select_bank(bank)
+  self.app:set_bank(bank)
+  -- Bank changes establish a new one-pad selection. Keeping the hidden
+  -- selection from the previous bank made inspector/output edits target that
+  -- old pad even though the newly displayed pad had focus.
+  self.selected_pads={[self.app.selected_pad]=true}
+  self.pad_selection_anchor=self.app.selected_pad
+end
+
 function UI:queue_live_pad_controls(index)
   self.app:queue_pad_controls(index,false)
   self.live_pad_controls_pending=true
@@ -2736,7 +2745,7 @@ function UI:pads()
   local pad_grid_height=pad_height*4+layout_gap*3
   local bank_height=math.max(18,(pad_grid_height-layout_gap*7)/8)
   r.ImGui_BeginGroup(c)
-  for bank=1,8 do if self:button(string.char(64+bank).."##inspectorbank",bank_width,bank_height,bank==app.rack.selected_bank and C.selected or nil) then app:set_bank(bank) end end
+  for bank=1,8 do if self:button(string.char(64+bank).."##inspectorbank",bank_width,bank_height,bank==app.rack.selected_bank and C.selected or nil) then self:select_bank(bank) end end
   r.ImGui_EndGroup(c);r.ImGui_SameLine(c);r.ImGui_BeginGroup(c)
   for row=0,3 do
     for col=0,3 do
@@ -3267,7 +3276,7 @@ function UI:mixer_view(width,height)
   local rail=self:begin_panel("##mixer_rail",rail_width,body_height,no_scroll_flags(r))
   if rail then
     for i=1,8 do
-      if self:button(string.char(64+i).."##mixer_bank_"..i,34,27,i==bank and C.selected or nil) then app:set_bank(i);bank=i end
+      if self:button(string.char(64+i).."##mixer_bank_"..i,34,27,i==bank and C.selected or nil) then self:select_bank(i);bank=i end
     end
     r.ImGui_Separator(c)
     if self:icon_button("##mixer_outputs_toggle","outputs","Show or hide output submixes",34,30,self.mixer_show_outputs,nil,false,true) then self.mixer_show_outputs=not self.mixer_show_outputs end
@@ -3313,7 +3322,7 @@ function UI:instrument_pad_grid(width,height)
     r.ImGui_BeginGroup(c)
     local bank_height=math.max(24,math.floor((height-30)/8))
     for bank=1,8 do
-      if self:button(string.char(64+bank).."##instrumentbank",42,bank_height,bank==app.rack.selected_bank and C.selected or nil) then app:set_bank(bank) end
+      if self:button(string.char(64+bank).."##instrumentbank",42,bank_height,bank==app.rack.selected_bank and C.selected or nil) then self:select_bank(bank) end
     end
     r.ImGui_EndGroup(c)
     r.ImGui_SameLine(c)

@@ -2,7 +2,7 @@
 -- @version 0.1.5
 -- @author davvolinni-ui
 -- @changelog
---   Added live control updates, piano-roll selection and legato tools, and drag edge-scrolling.
+--   Added live controls and piano-roll tools; fixed bank selection targeting stale pads.
 -- @link
 --   Support https://forum.cockos.com/showthread.php?t=310870
 --   Repository https://github.com/davvolinni-ui/ReaDrumXT
