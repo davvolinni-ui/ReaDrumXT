@@ -19,8 +19,11 @@ end
 
 function M.controls_from_pad(pad, output_pair, sample_slot, audible)
   local controls = pad.default_controls or {}
+  local filter_types={off=0,lowpass=1,highpass=2,bandpass=3}
+  local drive_characters={hard=0,clean=0,soft=1}
   local gate_mode = controls.playback_mode == "gate"
   local envelope_enabled = controls.envelope_enabled == true or controls.envelope_enabled == 1
+  local envelope_mode = controls.envelope_mode == "ahd" and "ahd" or "adsr"
   local transpose = controls.transpose_semitones
   local cents = controls.tune_cents
   if transpose == nil and cents == nil then
@@ -36,11 +39,16 @@ function M.controls_from_pad(pad, output_pair, sample_slot, audible)
     -- UI values are normalized, but the engine receives real sampler times.
     -- These ranges keep drum envelopes useful while remaining sample-rate independent.
     attack_seconds = envelope_enabled and envelope.time_seconds(controls.attack or 0, envelope.ATTACK_MAX_SECONDS) or 0,
-    decay_seconds = envelope_enabled and envelope.time_seconds(controls.decay or envelope.DEFAULT_DECAY_CONTROL, envelope.DECAY_MAX_SECONDS) or 0,
-    sustain_gain = envelope_enabled and math.max(0, math.min(1, tonumber(controls.sustain) or 1)) or 1,
+    hold_seconds = envelope_enabled and envelope_mode == "ahd" and envelope.time_seconds(controls.hold or 0, envelope.HOLD_MAX_SECONDS) or 0,
+    decay_seconds = envelope_enabled and envelope.time_seconds(
+      envelope_mode == "ahd" and (controls.ahd_decay or controls.decay or envelope.DEFAULT_DECAY_CONTROL)
+        or (controls.decay or envelope.DEFAULT_DECAY_CONTROL),
+      envelope.DECAY_MAX_SECONDS) or 0,
+    sustain_gain = not envelope_enabled and 1 or (envelope_mode == "adsr" and math.max(0, math.min(1, tonumber(controls.sustain) or 1)) or 0),
+    envelope_mode = envelope_enabled and envelope_mode == "ahd" and 1 or 0,
     -- ADSR release owns note-off only while the advanced envelope is enabled.
     -- Otherwise Gate mode uses its dedicated short release/de-click time.
-    release_seconds = envelope_enabled
+    release_seconds = envelope_enabled and envelope_mode == "adsr"
       and envelope.time_seconds(controls.release or 0, envelope.RELEASE_MAX_SECONDS)
       or math.max(0, math.min(envelope.GATE_RELEASE_MAX_SECONDS, (tonumber(controls.gate_release_ms) or 10) / 1000)),
     sample_start = tonumber(controls.sample_start) or 0,
@@ -66,6 +74,11 @@ function M.controls_from_pad(pad, output_pair, sample_slot, audible)
     slide_retrigger = controls.slide_retrigger~=false,
     slide_crossfade_seconds = math.max(0,math.min(.1,(tonumber(controls.slide_crossfade_ms) or 20)/1000)),
     audible = audible~=false,
+    filter_type = filter_types[controls.filter_type] or 0,
+    filter_cutoff_hz = math.max(20,math.min(20000,tonumber(controls.filter_cutoff_hz) or 20000)),
+    filter_resonance = math.max(0,math.min(1,tonumber(controls.filter_resonance) or 0)),
+    drive = math.max(0,math.min(1,tonumber(controls.drive) or 0)),
+    drive_character = drive_characters[controls.drive_character] or 0,
   }
 end
 

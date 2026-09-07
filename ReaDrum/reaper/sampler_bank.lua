@@ -14,7 +14,8 @@ M.BASE = 1800000
 M.PATH_OFFSET = 32
 M.PATH_CAP = 2048
 M.CONTROL_OFFSET = 34000
-M.CONTROL_WORDS = 25
+M.CONTROL_WORDS = 30
+M.ENVELOPE_OFFSET = 35600
 M.AUDIO_MASK_OFFSET = 35200
 M.SLIDE_OFFSET = 35300
 M.LIVE_OFFSET = 35400
@@ -153,6 +154,11 @@ function M.publish_controls(host, bank, slot, controls, namespace)
     clamp(finite(controls.reverb_send or 0,"reverb_send"),0,1),
     clamp(finite(controls.delay_send or 0,"delay_send"),0,1),
     clamp(finite(controls.glide_seconds or 0,"glide_seconds"),0,2),
+    integer(controls.filter_type or 0,"filter_type",0,3),
+    clamp(finite(controls.filter_cutoff_hz or 20000,"filter_cutoff_hz"),20,20000),
+    clamp(finite(controls.filter_resonance or 0,"filter_resonance"),0,1),
+    clamp(finite(controls.drive or 0,"drive"),0,1),
+    integer(controls.drive_character or 0,"drive_character",0,1),
   }
   for index, value in ipairs(values) do host.gmem_write(address + index - 1, value) end
   -- A separate fixed mailbox keeps the established control stride compatible.
@@ -161,6 +167,9 @@ function M.publish_controls(host, bank, slot, controls, namespace)
   local slide_address=base(bank,namespace)+M.SLIDE_OFFSET+slot*2
   host.gmem_write(slide_address,controls.slide_retrigger==false and 0 or 1)
   host.gmem_write(slide_address+1,clamp(finite(controls.slide_crossfade_seconds or .02,"slide_crossfade_seconds"),0,.1))
+  local envelope_address=base(bank,namespace)+M.ENVELOPE_OFFSET+slot*2
+  host.gmem_write(envelope_address,integer(controls.envelope_mode or 0,"envelope_mode",0,1))
+  host.gmem_write(envelope_address+1,clamp(finite(controls.hold_seconds or 0,"hold_seconds"),0,30))
   return control_revision
 end
 

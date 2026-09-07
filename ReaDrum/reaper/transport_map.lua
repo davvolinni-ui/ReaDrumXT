@@ -1,6 +1,6 @@
 -- @noindex
 -- Immutable Phase 3B.2a absolute-QN <-> project-time map. QN is quarter notes.
-local M={MAGIC=52445,VERSION=1,MAX_ANCHORS=8192,MAX_SIGNATURES=256};local MOD=2147483647
+local M={MAGIC=52445,VERSION=1,MAX_ANCHORS=8192,MAX_SIGNATURES=256,MIN_COVERAGE_QN=65536};local MOD=2147483647
 local function finite(x)return type(x)=="number"and x==x and x~=math.huge and x~=-math.huge end
 local function integer(x)return finite(x)and x==math.floor(x)end
 local function cp(a)local b={};for i,v in ipairs(a)do if type(v)=="table"then b[i]={};for k,x in pairs(v)do b[i][k]=x end else b[i]=v end end;return b end
@@ -8,6 +8,10 @@ local function fail(s)error("transport map: "..s,3)end
 local function sum(w)local c=1;for i=5,#w do local v=w[i];local fixed=v>=0 and math.floor(v*1000000+.5)or math.ceil(v*1000000-.5);c=(c*48271+(fixed%MOD))%MOD end;return c end
 local function markers(x,q0,q1)
  if type(x)~="table"or#x>M.MAX_SIGNATURES then fail("signature capacity")end;local p=nil;for _,m in ipairs(x)do if not finite(m.qn)or not integer(m.num)or m.num<1 or not integer(m.den)or m.den<1 or m.qn<q0 or m.qn>q1 or(p and m.qn<=p)then fail("invalid signature marker")end;p=m.qn end
+end
+function M.coverage_end(project_end_qn)
+ if not finite(project_end_qn)or project_end_qn<0 then fail("invalid project end")end
+ return math.max(M.MIN_COVERAGE_QN,math.ceil(project_end_qn+64))
 end
 local function subdivide(f,q0,t0,q1,t1,rate,cap,state)
  local qs={q0+(q1-q0)*.25,q0+(q1-q0)*.5,q0+(q1-q0)*.75};local split=false;for _,q in ipairs(qs)do local t=f(q);if not finite(t)then fail("non-finite sample")end;if math.abs(t-(t0+(q-q0)*(t1-t0)/(q1-q0)))*rate>.25 then split=true end end

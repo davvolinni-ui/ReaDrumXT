@@ -1,5 +1,6 @@
 -- @noindex
 local model = require("ReaDrum.core.model")
+local envelope = require("ReaDrum.core.envelope")
 local json = require("ReaDrum.core.json")
 local clipboard = require("ReaDrum.core.clipboard")
 local Adapter = require("ReaDrum.reaper.adapter")
@@ -37,7 +38,36 @@ local function sample_name(pad)
   return (path:match("([^/\\]+)%.[^%.]+$") or path:match("([^/\\]+)$")):gsub("[%c]",""):sub(1,64)
 end
 
-local function audio_rate(host, project)
+local function initialize_sample_envelope(host,pad,path)
+  local controls=pad.default_controls or {};pad.default_controls=controls
+  if controls.ahd_decay~=nil or not(host.PCM_Source_CreateFromFile and host.GetMediaSourceLength) then return end
+  local source=host.PCM_Source_CreateFromFile(path);if not source then return end
+  -- Parentheses collapse REAPER's (length, is_quarter_notes) return pair to
+  -- the length value before tonumber; otherwise the boolean becomes its base.
+  local duration=math.max(.001,tonumber((host.GetMediaSourceLength(source))) or .001)
+  if host.PCM_Source_Destroy then host.PCM_Source_Destroy(source) end
+  local trim_start=math.max(0,math.min(1,tonumber(controls.sample_start) or 0))
+  local trim_end=math.max(trim_start,math.min(1,tonumber(controls.sample_end) or 1))
+  local transpose=tonumber(controls.transpose_semitones);local cents=tonumber(controls.tune_cents)
+  if transpose==nil and cents==nil then
+    local total=((tonumber(controls.pitch) or .5)-.5)*160
+    transpose=math.floor(total+(total>=0 and .5 or -.5));cents=(total-transpose)*100
+  end
+  local playback_rate=math.max(.000001,2^(((transpose or 0)+(cents or 0)/100)/12))
+  -- A newly enabled AHD envelope is neutral: its decay reaches silence at
+  -- the sample boundary. Moving D left is what intentionally shortens it.
+  local default_decay=duration*math.max(.001,trim_end-trim_start)/playback_rate
+  controls.ahd_decay=envelope.time_control(default_decay,envelope.DECAY_MAX_SECONDS)
+end
+
+local function audio_rate(host, project, track, fx)
+  -- The dispatcher is the only authoritative source for the rate used by
+  -- JSFX scheduling.  Device and project settings can disagree (project-rate
+  -- overrides, aggregate devices, and render transitions are common).
+  if track and fx and host.TrackFX_GetParam then
+    local rate = tonumber((host.TrackFX_GetParam(track, fx, 67)))
+    if rate and rate > 0 then return math.floor(rate + 0.5) end
+  end
   if host.GetAudioDeviceInfo then
     local ok, value = host.GetAudioDeviceInfo("SRATE", "")
     local rate = tonumber(value)
@@ -87,9 +117,72 @@ function Controller.new(host, project)
   self.undo_stack,self.redo_stack={},{}
   self.engine_active_variation=self:active_variation_number()
   self:flush(true)
+  -- A saved project can expose its extension state before REAPER has finished
+  -- restoring the dispatcher's FX state.  That late restore can overwrite the
+  -- first runtime/map commit, leaving pad audition alive but the sequencer
+  -- silent.  Verify the audio-thread acknowledgement for a short bounded
+  -- startup window and republish with a fresh token when it was displaced.
+  self.startup_sync={expected=self.revision,next_check=host.time_precise()+.25,attempts=0}
   self:remove_legacy_gain_lfo()
   self:remove_master_clipper()
   return self
+end
+
+function Controller:verify_startup_sync(now)
+  local sync=self.startup_sync
+  if not sync then return true end
+  now=now or self.host.time_precise()
+  if now<(sync.next_check or 0) then return false end
+  local track=self:find_track("sequencer")
+  if not track or not self.host.TrackFX_GetParam then return false end
+  local fx=self:dispatcher(track)
+  local active=math.floor((self.host.TrackFX_GetParam(track,fx,34)or 0)+.5)
+  local map_words=math.floor((self.host.TrackFX_GetParam(track,fx,80)or 0)+.5)
+  local expected_mode=self.rack and self.rack.playback_mode=="rendered" and 0 or (self.rack and self.rack.playback_mode=="events" and 2 or 1)
+  local actual_mode=self.host.TrackFX_GetParam(track,fx,66)
+  local maps_live_midi=self.host.TrackFX_GetParam(track,fx,65)
+  local dispatcher_rate=math.floor((self.host.TrackFX_GetParam(track,fx,67)or 0)+.5)
+  if active==self.revision and map_words>0 and actual_mode==expected_mode and maps_live_midi>=.5 and dispatcher_rate>0 and dispatcher_rate==self.last_published_rate then self.startup_sync=nil;return true end
+  if sync.attempts>=8 then
+    self.startup_sync=nil
+    self.status="Sequencer startup sync failed; toggle Host or restart ReaDrumXT"
+    return false
+  end
+  sync.attempts=sync.attempts+1
+  self:publish_transient_runtime(nil,true)
+  sync.expected=self.revision
+  sync.next_check=now+math.min(1,.15*2^(sync.attempts-1))
+  return false
+end
+
+function Controller:verify_runtime_rate(now)
+  -- Startup owns its bounded retries; do not race it with another publisher.
+  if self.startup_sync then return false end
+  now=now or self.host.time_precise()
+  if now<(self.next_rate_check or 0) then return true end
+  self.next_rate_check=now+.25
+  local track=self:find_track("sequencer")
+  if not track or not self.host.TrackFX_GetParam then return false end
+  local fx=self:dispatcher(track)
+  local rate=math.floor((self.host.TrackFX_GetParam(track,fx,67)or 0)+.5)
+  local expected_mode=self.rack and self.rack.playback_mode=="rendered" and 0 or (self.rack and self.rack.playback_mode=="events" and 2 or 1)
+  local actual_mode=self.host.TrackFX_GetParam(track,fx,66)
+  local maps_live_midi=self.host.TrackFX_GetParam(track,fx,65)
+  local active=math.floor((self.host.TrackFX_GetParam(track,fx,34)or 0)+.5)
+  local map_words=math.floor((self.host.TrackFX_GetParam(track,fx,80)or 0)+.5)
+  local rate_matches=rate>0 and rate==self.last_published_rate
+  if rate_matches and active==self.revision and map_words>0 and actual_mode==expected_mode and maps_live_midi>=.5 then
+    self.runtime_repair_attempts=0;self.next_runtime_repair=nil
+    return true
+  end
+  -- A stopped/offline audio engine cannot acknowledge publication. Wait for
+  -- a real rate, and back off unacknowledged repairs instead of rebuilding
+  -- the snapshot four times a second indefinitely.
+  if rate<=0 or now<(self.next_runtime_repair or 0) then return false end
+  self.runtime_repair_attempts=math.min(6,(self.runtime_repair_attempts or 0)+1)
+  self.next_runtime_repair=now+math.min(8,.25*2^(self.runtime_repair_attempts-1))
+  self:publish_transient_runtime(nil,true)
+  return false -- publication is not an audio-thread acknowledgement
 end
 
 function Controller:pattern() return self.rack.patterns[self.pattern_index] end
@@ -555,8 +648,12 @@ function Controller:build_publish_payload(yield_hook)
   local image = snapshot_v2.encode(runtime, { revision = self.revision, active_variation = engine_variation, yield_hook=yield_hook })
   if not yield_hook then self:probe("snapshot encode",started);started=self.host.time_precise()end
   local project_end = self.host.TimeMap2_timeToQN(self.project, math.max(0, self.host.GetProjectLength(self.project)))
-  local qn_end = math.max(256, math.ceil(project_end + 64))
-  local rate = audio_rate(self.host, self.project)
+  -- The sequencer rejects blocks outside the immutable transport map. Short
+  -- and empty projects used to publish only 256 QN (128 seconds at 120 BPM),
+  -- so playback silently expired while the pad-audition path kept working.
+  local qn_end = transport.coverage_end(project_end)
+  local rate = audio_rate(self.host, self.project, track, fx)
+  self.last_published_rate=rate
   local map_key=transport_key(self.host,self.project,math.max(0,self.host.GetProjectLength(self.project)),qn_end,rate)
   local map_model
   if self.transport_cache and self.transport_cache.key==map_key then
@@ -1027,7 +1124,8 @@ function Controller:render_variation_to_midi()
       local rendered_pad=self.rack.pads[event.pad];local rendered_controls=rendered_pad and rendered_pad.default_controls or {}
       notes[#notes+1]={start_qn=start_qn,end_qn=math.max(start_qn+.001,end_qn),pad=pad_zero,pitch=(36+pad_zero)%128,velocity=event.velocity,
         transpose=(event.note or 69)-69,pitch_cents=event.pitch_cents or 0,pan=event.pan or 0,slide=event.slide==true,transient_shift=event.transient_shift or 0,
-        glide=math.max(0,math.min(.5,tonumber(rendered_controls.glide) or 0))}
+        glide=math.max(0,math.min(.5,tonumber(rendered_controls.glide) or 0)),filter_cutoff=event.filter_cutoff or 1,
+        filter_resonance=event.filter_resonance or 0,drive=event.drive or 0}
     end
   end
   if #notes==0 then self.status="Add at least one step before inserting MIDI";return end
@@ -1050,6 +1148,7 @@ function Controller:render_variation_to_midi()
     note.bend=math.max(0,math.min(16383,math.floor(8192+total_pitch*8192/24+.5)))
     note.pan_cc=math.max(0,math.min(127,math.floor((math.max(-100,math.min(100,note.pan))+100)*127/200+.5)))
     note.slide_cc=note.slide and 127 or 0;note.shift_cc=math.max(0,math.min(127,math.floor(note.transient_shift*127+.5)));note.glide_cc=math.max(0,math.min(127,math.floor(note.glide*254+.5)))
+    note.cutoff_cc=math.max(0,math.min(127,math.floor(note.filter_cutoff*127+.5)));note.resonance_cc=math.max(0,math.min(127,math.floor(note.filter_resonance*127+.5)));note.drive_cc=math.max(0,math.min(127,math.floor(note.drive*127+.5)))
     -- Swing can make the short half of a pair begin before the preceding
     -- same-pad note has ended. Reusing its channel/pitch lets that older MIDI
     -- note-off terminate the newer voice. Keep overlapping (and exact
@@ -1061,7 +1160,7 @@ function Controller:render_variation_to_midi()
     local previous=previous_channel_by_pad[note.pad]
     if note.slide and previous~=nil then forbidden[previous]=true end
     local forbidden_key={};for channel=0,15 do if forbidden[channel] then forbidden_key[#forbidden_key+1]=channel end end
-    local key=table.concat({note.bend,note.pan_cc,note.slide_cc,note.shift_cc,note.glide_cc,table.concat(forbidden_key,",")},":")
+    local key=table.concat({note.bend,note.pan_cc,note.slide_cc,note.shift_cc,note.glide_cc,note.cutoff_cc,note.resonance_cc,note.drive_cc,table.concat(forbidden_key,",")},":")
     local channel=packets[key]
     if channel==nil then
       channel=0;while channel<16 and (onset_channels[channel] or forbidden[channel]) do channel=channel+1 end
@@ -1108,6 +1207,9 @@ function Controller:render_variation_to_midi()
       assert(self.host.MIDI_InsertCC(take,false,false,packet_ppq,0xB0,note.channel,10,note.pan_cc),"could not write MIDI pan")
       assert(self.host.MIDI_InsertCC(take,false,false,packet_ppq,0xB0,note.channel,68,note.slide_cc),"could not write MIDI slide")
       assert(self.host.MIDI_InsertCC(take,false,false,packet_ppq,0xB0,note.channel,74,note.shift_cc),"could not write MIDI transient shift")
+      assert(self.host.MIDI_InsertCC(take,false,false,packet_ppq,0xB0,note.channel,20,note.cutoff_cc),"could not write MIDI filter cutoff")
+      assert(self.host.MIDI_InsertCC(take,false,false,packet_ppq,0xB0,note.channel,21,note.resonance_cc),"could not write MIDI filter resonance")
+      assert(self.host.MIDI_InsertCC(take,false,false,packet_ppq,0xB0,note.channel,22,note.drive_cc),"could not write MIDI drive")
       assert(self.host.MIDI_InsertNote(take,false,false,start_ppq,math.max(start_ppq+1,end_ppq),note.channel,note.pitch,note.velocity,true),"could not write MIDI note")
     end
     self.host.MIDI_Sort(take)
@@ -1965,13 +2067,14 @@ function Controller:load_selected_sample()
   local ok, path = self.host.GetUserFileNameForRead("Load sample into " .. state.sample_label(self:pad()), "", "Audio files (*.wav;*.aif;*.aiff;*.flac;*.ogg)\0*.wav;*.aif;*.aiff;*.flac;*.ogg\0All files\0*.*\0")
   if ok and path ~= "" then
     self:pad().sample = path; self:pad().name = path:match("([^/\\]+)%.[^%.]+$") or path:match("([^/\\]+)$") or self:pad().name
+    initialize_sample_envelope(self.host,self:pad(),path)
     self:mark_pad_structural(self.selected_pad); self:flush(true)
   end
 end
 
 function Controller:load_sample_path(index,path)
   if not path or path==""or not self.adapter:file_exists(path)then self.status="Sample path is missing";return false end
-  local pad=self:pad(index);pad.sample=path;pad.name=path:match("([^/\\]+)%.[^%.]+$")or path:match("([^/\\]+)$")or pad.name;self.selected_pad=index;self:mark_pad_structural(index);self:flush(true);return true
+  local pad=self:pad(index);pad.sample=path;pad.name=path:match("([^/\\]+)%.[^%.]+$")or path:match("([^/\\]+)$")or pad.name;initialize_sample_envelope(self.host,pad,path);self.selected_pad=index;self:mark_pad_structural(index);self:flush(true);return true
 end
 
 function Controller:load_sample_paths(start_index, paths)
@@ -1987,6 +2090,7 @@ function Controller:load_sample_paths(start_index, paths)
       local pad=self:pad(index)
       pad.sample=path
       pad.name=path:match("([^/\\]+)%.[^%.]+$") or path:match("([^/\\]+)$") or pad.name
+      initialize_sample_envelope(self.host,pad,path)
       loaded=loaded+1
       changed_indices[#changed_indices+1]=index
     else
@@ -2110,7 +2214,16 @@ function Controller:adjust_sample_octave(delta)
   self:queue_pad_controls(self.selected_pad);self.status=string.format("Sample octave %+d",math.floor(controls.transpose_semitones/12));return true
 end
 function Controller:reset_pad_controls()
-  self:pad().default_controls={};self:queue_pad_controls(self.selected_pad);self.status="Pad controls reset"
+  local pad=self:pad();pad.default_controls={
+    envelope_mode="ahd",envelope_layout_version=2,hold=0,
+    filter_type="off",filter_cutoff_hz=20000,filter_resonance=0,
+    drive=0,drive_character="hard",
+  }
+  local path=type(pad.sample)=="table" and pad.sample.path or pad.sample
+  if path and path~="" then initialize_sample_envelope(self.host,pad,path) end
+  -- Reset is a discrete action, not a drag. Commit the neutral packet now so
+  -- the next audition or sequencer note cannot retain the previous DSP state.
+  self:queue_pad_controls(self.selected_pad,true);self.status="Pad controls reset"
 end
 function Controller:poll_bridge()
   if self.host.time_precise()<(self.bridge_due or 0)then return end;self.bridge_due=self.host.time_precise()+0.25

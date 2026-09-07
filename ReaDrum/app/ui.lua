@@ -5,6 +5,8 @@ local theme = require("ReaDrum.app.theme")
 local eula = require("ReaDrum.app.eula")
 local groove = require("ReaDrum.core.groove")
 local envelope = require("ReaDrum.core.envelope")
+local diagnostics = require("ReaDrum.reaper.diagnostics")
+local playback_capture = require("ReaDrum.reaper.playback_capture")
 local envelope_math = envelope
 
 local module_source=debug.getinfo(1,"S").source:sub(2)
@@ -37,17 +39,28 @@ local PAD_HEX={"#C82C55","#3A86D4","#E0522D","#49A25B","#8457C5","#D18422","#2B9
 
 local DEFAULTS = {
   volume=0.354, pan=0.5, pitch=0.5, sample_start=0, sample_end=1,
-  -- Neutral musical envelope defaults; the decay control resolves to 250 ms.
-  attack=0, decay=envelope.DEFAULT_DECAY_CONTROL, sustain=1.0, release=0,
+  attack=0, sustain=1.0, release=0,
   fade_in=0, fade_out=0, fade_in_curve=.5, fade_out_curve=.5,
   obey_note_offs=1, loop=0,
 }
+-- Sampler envelope editors present the untouched envelope as one consistent
+-- shape regardless of sample length. Once moved, the decay handle stores and
+-- displays its actual time value against the playable sample timeline.
+local DEFAULT_AHD_DECAY_POSITION = 1.0
+local DEFAULT_ADSR_DECAY_POSITION = .40
 
 local ENVELOPE_TIME_MAX = {
   attack=envelope.ATTACK_MAX_SECONDS,
+  hold=envelope.HOLD_MAX_SECONDS,
   decay=envelope.DECAY_MAX_SECONDS,
   release=envelope.RELEASE_MAX_SECONDS,
 }
+local FILTER_TYPES={"off","lowpass","highpass","bandpass"}
+local FILTER_LABELS={"OFF","LP","HP","BP"}
+local function filter_type_index(value)for i,name in ipairs(FILTER_TYPES)do if value==name then return i-1 end end;return 0 end
+local function cutoff_control(hz)return math.log(math.max(20,math.min(20000,tonumber(hz)or 20000))/20)/math.log(1000)end
+local function cutoff_hz(value)return 20*1000^math.max(0,math.min(1,tonumber(value)or 1))end
+local function cutoff_text(value)local hz=cutoff_hz(value);return hz>=1000 and string.format("%.1f kHz",hz/1000)or string.format("%.0f Hz",hz)end
 
 local function envelope_value_text(key,value)
   if key=="sustain" then return envelope.format_sustain(value) end
@@ -79,6 +92,9 @@ local PROPERTIES = {
   { label="Transpose", short="TRANSPOSE", key="pitch_semitones", kind="int", min=-12, max=24, default=0, format="%+d" },
   { label="Tune", short="TUNE", key="pitch_cents", kind="int", min=-100, max=100, default=0, format="%d" },
   { label="Pan", short="PAN", key="pan_lock", kind="pan", min=-100, max=100, default=false, format="%d" },
+  { label="Cutoff", short="CUT", key="filter_cutoff_lock", kind="lock", base="filter_cutoff_hz", min=0, max=1, default=false, format=cutoff_text },
+  { label="Resonance", short="RES", key="filter_resonance_lock", kind="lock", base="filter_resonance", min=0, max=1, default=false, format=function(v)return string.format("%.0f%%",v*100)end },
+  { label="Drive", short="DRIVE", key="drive_lock", kind="lock", base="drive", min=0, max=1, default=false, format=function(v)return string.format("%.0f%%",v*100)end },
   { label="Repeat", short="REPEAT", key="repeat_count", kind="int", min=1, max=64, default=1, format="%d" },
   { label="Ratchet", short="RATCHET", key="repeat_divide", kind="divide", min=1, max=16, default=1, format="x%d" },
   { label="Probability", short="CHANCE", key="probability", kind="double", min=0, max=100, default=100, format="%.0f" },
@@ -221,6 +237,7 @@ function UI.new(host, app)
     eula_view_open=false,eula_text=false,eula_error=false,
     groove_root=groove_root,groove_entries=false,groove_cache={},groove_filter="",groove_popup_seen=false,groove_popup_active=false,groove_preview_entry=false,
     groove_categories={},groove_category="",groove_nav_index=1,groove_nav_entry=false,
+    pending_diagnostic=false,
   }, UI)
   app.perf_callback=function(name,seconds) self:perf_record(name,seconds) end
   app.ui_invalidate=function() self.lane_sustain_cache=setmetatable({}, {__mode="k"}) end
@@ -1687,7 +1704,7 @@ function UI:top_toolbar()
           if changed then self.track_colors_enabled=value;app:set_pad_track_color_sync(value)end
           changed,value=r.ImGui_Checkbox(c,"Audition pads while editing",self.audition_enabled~=false)
           if changed then self.audition_enabled=value;app.audition_notes=value;if r.SetExtState then r.SetExtState("ReaDrum5k","audition_while_editing",value and "1" or "0",true)end end
-          changed,value=r.ImGui_Checkbox(c,"Show ADSR on waveform",self.show_adsr_on_waveform==true)
+          changed,value=r.ImGui_Checkbox(c,"Show envelope on waveform",self.show_adsr_on_waveform==true)
           if changed then self.show_adsr_on_waveform=value;if r.SetExtState then r.SetExtState("ReaDrum5k","show_adsr_on_waveform",value and "1" or "0",true)end end
            changed,value=r.ImGui_Checkbox(c,"Color active steps by pad",self.color_steps_by_pad==true)
            if changed then self.color_steps_by_pad=value;if r.SetExtState then r.SetExtState("ReaDrum5k","color_steps_by_pad",value and "1" or "0",true)end end
@@ -1706,6 +1723,14 @@ function UI:top_toolbar()
           end
           r.ImGui_SameLine(c);if r.ImGui_Button(c,"Grooves Folder",120,25)then self:open_grooves_folder()end
           r.ImGui_SameLine(c);if r.ImGui_Button(c,"Rescan Grooves",120,25)then self:rescan_grooves()end
+          r.ImGui_Separator(c)
+          r.ImGui_TextDisabled(c,"Support")
+          if r.ImGui_Button(c,"Create Diagnostic Report",190,27) then self.pending_diagnostic=true;app.status="Preparing diagnostic report…" end
+          self:tooltip("Read-only project inspection plus an isolated disposable-engine test. Your current project is not modified.")
+          if r.ImGui_Button(c,"Capture Playback (10 seconds)",240,27) then
+            if not self.playback_capture_job then self.pending_playback_capture=true end
+          end
+          self:tooltip("Start playback yourself, then capture note flow for 10 seconds. No audio recording, routing changes or automatic playback. Requires updated FX.")
           r.ImGui_EndTabItem(c)
         end
         if r.ImGui_BeginTabItem(c,"Appearance")then
@@ -1978,16 +2003,12 @@ end
 function UI:accept_sample_drop(start_index,allow_pad_move)
   local r,c=self.host,self.ctx
   if not (r.ImGui_BeginDragDropTarget and r.ImGui_AcceptDragDropPayloadFiles) then return end
+  local pending_pad_sources,pending_paths
   if r.ImGui_BeginDragDropTarget(c) then
     if allow_pad_move and r.ImGui_AcceptDragDropPayload then
       local accepted,payload=r.ImGui_AcceptDragDropPayload(c,"READRUM_PADS")
       if accepted and type(payload)=="string" then
-        local sources={};for value in payload:gmatch("%d+") do sources[#sources+1]=tonumber(value) end
-        local destinations=self.app:move_pads(sources,start_index)
-        if destinations then
-          self.selected_pads={};for _,slot in ipairs(destinations) do self.selected_pads[slot]=true end
-          self.pad_selection_anchor=destinations[1];self.pad_rearrange_drag=false
-        end
+        pending_pad_sources={};for value in payload:gmatch("%d+") do pending_pad_sources[#pending_pad_sources+1]=tonumber(value) end
       end
     end
     -- The optional second argument is a drag/drop flags bitmask, not a file
@@ -1995,26 +2016,74 @@ function UI:accept_sample_drop(start_index,allow_pad_move)
     -- applies capacity from the target pad through Pad 128.
     local accepted,count=r.ImGui_AcceptDragDropPayloadFiles(c)
     if accepted then
-      local paths={}
+      pending_paths={}
       for i=0,count-1 do
         local ok,path=r.ImGui_GetDragDropPayloadFile(c,i)
-        if ok and path then paths[#paths+1]=path end
-      end
-      if #paths>0 then
-        local loaded,loaded_count,overflow=self.app:load_sample_paths(start_index,paths)
-        if not loaded then
-          self.drop_error=self.app.status or "Samples could not be loaded"
-          self.drop_error_color=C.red
-          self.drop_error_until=r.time_precise()+6
-        elseif (overflow or 0)>0 then
-          self.drop_error=self.app.status
-          self.drop_error_color=C.red
-          self.drop_error_until=r.time_precise()+6
-        end
+        if ok and path then pending_paths[#pending_paths+1]=path end
       end
     end
     r.ImGui_EndDragDropTarget(c)
   end
+  -- Structural pad/sample operations can rebuild tracks and yield out of the
+  -- current UI frame. Queue them until every ImGui window/child has ended.
+  if pending_pad_sources and #pending_pad_sources>0 then
+    self.pending_pad_drop={kind="move",start_index=start_index,sources=pending_pad_sources}
+  elseif pending_paths and #pending_paths>0 then
+    self.pending_pad_drop={kind="samples",start_index=start_index,paths=pending_paths}
+  end
+end
+
+function UI:process_pending_pad_drop()
+  local r=self.host
+  local pending=self.pending_pad_drop;if not pending then return end
+  self.pending_pad_drop=nil
+  if pending.kind=="move" then
+    local destinations=self.app:move_pads(pending.sources,pending.start_index)
+    if destinations then
+      self.selected_pads={};for _,slot in ipairs(destinations) do self.selected_pads[slot]=true end
+      self.pad_selection_anchor=destinations[1];self.pad_rearrange_drag=false
+    end
+  elseif pending.kind=="samples" then
+    local loaded,loaded_count,overflow=self.app:load_sample_paths(pending.start_index,pending.paths)
+    if not loaded then
+      self.drop_error=self.app.status or "Samples could not be loaded"
+      self.drop_error_color=C.red
+      self.drop_error_until=r.time_precise()+6
+    elseif (overflow or 0)>0 then
+      self.drop_error=self.app.status
+      self.drop_error_color=C.red
+      self.drop_error_until=r.time_precise()+6
+    end
+  end
+end
+
+function UI:process_pending_diagnostic()
+  local now=self.host.time_precise and self.host.time_precise()or os.time()
+  if self.pending_playback_capture then
+    self.pending_playback_capture=false
+    local ok,job=pcall(playback_capture.start,self.host,self.app)
+    if ok then self.playback_capture_job=job;self.app.status="Capturing note flow for 10 seconds; operate playback yourself."
+    else self.app.status="Capture unavailable: "..tostring(job) end
+  end
+  if self.playback_capture_job and now>=self.playback_capture_job.deadline+.1 then
+    local job=self.playback_capture_job;self.playback_capture_job=nil
+    local ok,path=pcall(function()return diagnostics.save_capture(self.host,playback_capture.finish(self.host,job))end)
+    self.app.status=ok and ("Playback capture saved: "..path) or ("Capture report failed: "..tostring(path))
+  end
+  if self.diagnostic_job then
+    if diagnostics.is_ready(self.diagnostic_job)then
+      self.app.status="Diagnostic report created: "..self.diagnostic_job.report;self.diagnostic_job=nil
+    elseif now-(self.diagnostic_job.started or now)>45 then
+      self.app.status="Diagnostic runner timed out. Partial report: "..self.diagnostic_job.directory;self.diagnostic_job=nil
+    end
+  end
+  if not self.pending_diagnostic then return end
+  self.pending_diagnostic=false
+  if self.diagnostic_job then self.app.status="A diagnostic report is already running.";return end
+  self.app.status="Creating diagnostic report in an isolated REAPER instance…"
+  local ok,result=xpcall(function()return diagnostics.create(self.host,self.app,product_directory)end,debug.traceback)
+  if ok then self.diagnostic_job=result
+  else self.app.status="Diagnostic report failed: "..tostring(result):match("^[^\r\n]+") end
 end
 
 function UI:apply_step_paint(lane,target_step)
@@ -2508,8 +2577,11 @@ function UI:waveform(path,width,height,start_pos,end_pos,id,envelope)
   start_pos=math.max(0,math.min(1,start_pos or 0));end_pos=math.max(start_pos,math.min(1,end_pos or 1))
   envelope=envelope or {}
   local show_adsr=self.show_adsr_on_waveform==true and (envelope.envelope_enabled==true or envelope.envelope_enabled==1)
+  local envelope_mode=envelope.envelope_mode=="adsr" and "adsr" or "ahd"
   local attack=math.max(0,math.min(1,envelope.attack or DEFAULTS.attack))
-  local decay=math.max(0,math.min(1,envelope.decay or DEFAULTS.decay))
+  local hold=math.max(0,math.min(1,envelope.hold or 0))
+  local saved_decay=envelope_mode=="ahd" and envelope.ahd_decay or envelope.decay
+  local decay=math.max(0,math.min(1,saved_decay or envelope_math.DEFAULT_DECAY_CONTROL))
   local sustain=math.max(0,math.min(1,envelope.sustain or DEFAULTS.sustain))
   local release=math.max(0,math.min(1,envelope.release or DEFAULTS.release))
   local fade_in=math.max(0,math.min(1,envelope.fade_in or 0))
@@ -2559,28 +2631,54 @@ function UI:waveform(path,width,height,start_pos,end_pos,id,envelope)
   end
   local playback_rate=math.max(.000001,2^((transpose+cents/100)/12))
   local attack_seconds=envelope_math.time_seconds(attack,envelope_math.ATTACK_MAX_SECONDS)
+  local hold_seconds=envelope_math.time_seconds(hold,envelope_math.HOLD_MAX_SECONDS)
+  local default_decay_position=envelope_mode=="ahd" and DEFAULT_AHD_DECAY_POSITION or DEFAULT_ADSR_DECAY_POSITION
+  local default_decay_seconds=trimmed_duration*default_decay_position/playback_rate
+  if saved_decay==nil then decay=envelope_math.time_control(default_decay_seconds,envelope_math.DECAY_MAX_SECONDS) end
   local decay_seconds=envelope_math.time_seconds(decay,envelope_math.DECAY_MAX_SECONDS)
-  local attack_x=math.min(ex,sx+span*math.min(1,attack_seconds*playback_rate/trimmed_duration))
-  local decay_x=math.min(ex,attack_x+span*math.min(1,(decay_seconds*playback_rate)/trimmed_duration))
-  local sustain_x=decay_x+(ex-decay_x)*.55
-  local envelope_active=self.wave_drag=="attack" or self.wave_drag=="decay" or self.wave_drag=="sustain"
+  local attack_x=sx+span*math.min(1,attack_seconds*playback_rate/trimmed_duration)
+  local hold_x=math.max(attack_x,sx+span*math.min(1,(attack_seconds+hold_seconds)*playback_rate/trimmed_duration))
+  local decay_x=math.max(envelope_mode=="ahd" and hold_x or attack_x,sx+span*math.min(1,(attack_seconds+(envelope_mode=="ahd" and hold_seconds or 0)+decay_seconds)*playback_rate/trimmed_duration))
+  local release_seconds=envelope_math.time_seconds(release,envelope_math.RELEASE_MAX_SECONDS)
+  local release_x=math.max(decay_x,ex-span*math.min(1,release_seconds*playback_rate/trimmed_duration))
+  local sustain_x=decay_x+(release_x-decay_x)*.55
+  local envelope_active=self.wave_drag=="attack" or self.wave_drag=="hold" or self.wave_drag=="decay" or self.wave_drag=="sustain" or self.wave_drag=="release"
   local envelope_base=C.value_marker or C.accent
   local envelope_color=(envelope_base&0xFFFFFF00)|(envelope_active and 0xFF or 0x94)
   local envelope_width=envelope_active and 2.0 or 1.25
-  local function envelope_handle(px,py,label,align)
+  local function envelope_handle(px,py,label,align,vertical)
     r.ImGui_DrawList_AddCircleFilled(draw,px,py,4.5,(C.border&0xFFFFFF00)|(envelope_active and 0xFF or 0xA8),12)
     r.ImGui_DrawList_AddCircleFilled(draw,px,py,3,envelope_color,12)
-    local text_width=r.ImGui_CalcTextSize(c,label);local tx=align=="left" and px-text_width-8 or px+8;local ty=py+6
+    local text_width=r.ImGui_CalcTextSize(c,label);local tx=align=="left" and px-text_width-8 or px+8
+    local ty=vertical=="above" and py-19 or (vertical=="lower" and py+21 or py+6)
     r.ImGui_DrawList_AddRectFilled(draw,tx-3,ty-2,tx+text_width+3,ty+13,(C.panel&0xFFFFFF00)|0xEC,3)
     r.ImGui_DrawList_AddText(draw,tx,ty,C.text,label)
+    return tx+text_width*.5,ty+6
   end
+  local attack_label_x,attack_label_y,hold_label_x,hold_label_y,decay_label_x,decay_label_y
   if show_adsr then
+    local decay_y=envelope_mode=="ahd" and bottom_y or sustain_y
     r.ImGui_DrawList_AddLine(draw,sx,bottom_y,attack_x,top_y,envelope_color,envelope_width)
-    r.ImGui_DrawList_AddLine(draw,attack_x,top_y,decay_x,sustain_y,envelope_color,envelope_width)
-    r.ImGui_DrawList_AddLine(draw,decay_x,sustain_y,ex,sustain_y,(envelope_base&0xFFFFFF00)|(envelope_active and 0xE8 or 0x70),envelope_active and 1.8 or 1.0)
-    envelope_handle(attack_x,top_y,"A","right")
-    envelope_handle(decay_x,sustain_y,"D","right")
-    envelope_handle(sustain_x,sustain_y,"S",sustain_x>x+width*.8 and "left" or "right")
+    if envelope_mode=="ahd" then
+      r.ImGui_DrawList_AddLine(draw,attack_x,top_y,hold_x,top_y,envelope_color,envelope_width)
+      r.ImGui_DrawList_AddLine(draw,hold_x,top_y,decay_x,bottom_y,envelope_color,envelope_width)
+    else
+      r.ImGui_DrawList_AddLine(draw,attack_x,top_y,decay_x,sustain_y,envelope_color,envelope_width)
+      r.ImGui_DrawList_AddLine(draw,decay_x,sustain_y,release_x,sustain_y,(envelope_base&0xFFFFFF00)|(envelope_active and 0xE8 or 0x70),envelope_active and 1.8 or 1.0)
+      r.ImGui_DrawList_AddLine(draw,release_x,sustain_y,ex,bottom_y,envelope_color,envelope_width)
+    end
+    local attack_align=envelope_mode=="ahd" and attack_x>x+28 and "left" or "right"
+    attack_label_x,attack_label_y=envelope_handle(attack_x,top_y,"A",attack_align)
+    if envelope_mode=="ahd" then
+      local hold_align=attack_align=="left" and "right" or "right"
+      local hold_vertical=math.abs(hold_x-attack_x)<24 and attack_align=="right" and "lower" or nil
+      hold_label_x,hold_label_y=envelope_handle(hold_x,top_y,"H",hold_align,hold_vertical)
+      decay_label_x,decay_label_y=envelope_handle(decay_x,decay_y,"D",decay_x>x+width*.8 and "left" or "right","above")
+    else
+      envelope_handle(decay_x,sustain_y,"D",decay_x>x+width*.8 and "left" or "right")
+      envelope_handle(sustain_x,sustain_y,"S",sustain_x>x+width*.8 and "left" or "right")
+      envelope_handle(release_x,sustain_y,"R",release_x>x+width*.8 and "left" or "right")
+    end
   end
   local fade_in_seconds=envelope_math.time_seconds(fade_in,envelope_math.FADE_MAX_SECONDS)
   local fade_out_seconds=envelope_math.time_seconds(fade_out,envelope_math.FADE_MAX_SECONDS)
@@ -2630,13 +2728,24 @@ function UI:waveform(path,width,height,start_pos,end_pos,id,envelope)
     if fade_out>0 then r.ImGui_DrawList_AddCircleFilled(draw,fo_mid_x,fo_mid_y,4,fade_color,12) end
   end
   r.ImGui_InvisibleButton(c,id or "##waveform",width,height)
-  local candidates={{"start",sx,y+height-2},{"end",ex,y+height-2},{"fade_in",fi_x,y+8},{"fade_out",fo_x,y+8}}
+  local candidates={}
+  if show_adsr then
+    candidates[#candidates+1]={"attack",attack_x,top_y};candidates[#candidates+1]={"decay",decay_x,envelope_mode=="ahd" and bottom_y or sustain_y}
+    if envelope_mode=="ahd" then
+      candidates[#candidates+1]={"hold",hold_x,top_y}
+      -- A and H legitimately occupy the same point at zero Hold. Their
+      -- separate labels remain independent drag targets in that state.
+      candidates[#candidates+1]={"attack",attack_label_x,attack_label_y}
+      candidates[#candidates+1]={"hold",hold_label_x,hold_label_y}
+      candidates[#candidates+1]={"decay",decay_label_x,decay_label_y}
+    else candidates[#candidates+1]={"sustain",sustain_x,sustain_y};candidates[#candidates+1]={"release",release_x,sustain_y} end
+  end
+  -- Envelope points come first so an AHD D at the neutral sample boundary is
+  -- draggable instead of losing an equal-distance hit test to the trim end.
+  candidates[#candidates+1]={"start",sx,y+height-2};candidates[#candidates+1]={"end",ex,y+height-2}
+  candidates[#candidates+1]={"fade_in",fi_x,y+8};candidates[#candidates+1]={"fade_out",fo_x,y+8}
   if fade_in>0 then candidates[#candidates+1]={"fade_in_curve",fi_mid_x,fi_mid_y} end
   if fade_out>0 then candidates[#candidates+1]={"fade_out_curve",fo_mid_x,fo_mid_y} end
-  if show_adsr then
-    candidates[#candidates+1]={"attack",attack_x,top_y};candidates[#candidates+1]={"decay",decay_x,sustain_y}
-    candidates[#candidates+1]={"sustain",sustain_x,sustain_y}
-  end
   local function nearest_handle()
     local mx,my=r.ImGui_GetMousePos(c);local nearest,distance="start",math.huge
     for _,candidate in ipairs(candidates) do local dx,dy=mx-candidate[2],my-candidate[3];local next_distance=dx*dx+dy*dy;if next_distance<distance then nearest,distance=candidate[1],next_distance end end
@@ -2648,7 +2757,7 @@ function UI:waveform(path,width,height,start_pos,end_pos,id,envelope)
   local changed=false
   if r.ImGui_IsItemHovered(c) and r.ImGui_IsMouseClicked and r.ImGui_IsMouseClicked(c,1) then
     local target=nearest_handle()
-    if target=="start" then start_pos=0 elseif target=="end" then end_pos=1 elseif target=="fade_in" then fade_in=0 elseif target=="fade_out" then fade_out=0 elseif target=="fade_in_curve" then fade_in_curve=DEFAULTS.fade_in_curve elseif target=="fade_out_curve" then fade_out_curve=DEFAULTS.fade_out_curve elseif target=="attack" then attack=DEFAULTS.attack elseif target=="decay" then decay=DEFAULTS.decay elseif target=="sustain" then sustain=DEFAULTS.sustain end
+    if target=="start" then start_pos=0 elseif target=="end" then end_pos=1 elseif target=="fade_in" then fade_in=0 elseif target=="fade_out" then fade_out=0 elseif target=="fade_in_curve" then fade_in_curve=DEFAULTS.fade_in_curve elseif target=="fade_out_curve" then fade_out_curve=DEFAULTS.fade_out_curve elseif target=="attack" then attack=DEFAULTS.attack elseif target=="hold" then hold=0 elseif target=="decay" then decay=envelope_math.time_control(default_decay_seconds,envelope_math.DECAY_MAX_SECONDS) elseif target=="sustain" then sustain=DEFAULTS.sustain elseif target=="release" then release=DEFAULTS.release end
     changed=true
   end
   if r.ImGui_IsItemActive(c) and self.wave_drag then
@@ -2660,17 +2769,19 @@ function UI:waveform(path,width,height,start_pos,end_pos,id,envelope)
     elseif self.wave_drag=="fade_in_curve" then local value=math.max(0,math.min(1,1-(my-fade_top)/math.max(1,mid-fade_top)));changed=value~=fade_in_curve;fade_in_curve=value
     elseif self.wave_drag=="fade_out_curve" then local value=math.max(0,math.min(1,1-(my-fade_top)/math.max(1,mid-fade_top)));changed=value~=fade_out_curve;fade_out_curve=value
     elseif self.wave_drag=="attack" then local clamped=math.max(sx,math.min(ex,mx));local seconds=(clamped-sx)/span*trimmed_duration/playback_rate;local value=envelope_math.time_control(seconds,envelope_math.ATTACK_MAX_SECONDS);changed=value~=attack;attack=value
-    elseif self.wave_drag=="decay" then local clamped=math.max(attack_x,math.min(ex,mx));local seconds=(clamped-attack_x)/span*trimmed_duration/playback_rate;local value=envelope_math.time_control(seconds,envelope_math.DECAY_MAX_SECONDS);changed=value~=decay;decay=value
-    elseif self.wave_drag=="sustain" then local value=math.max(0,math.min(1,1-(my-top_y)/math.max(1,bottom_y-top_y)));changed=value~=sustain;sustain=value end
+    elseif self.wave_drag=="hold" then local clamped=math.max(attack_x,math.min(ex,mx));local seconds=(clamped-attack_x)/span*trimmed_duration/playback_rate;local value=envelope_math.time_control(seconds,envelope_math.HOLD_MAX_SECONDS);changed=value~=hold;hold=value
+    elseif self.wave_drag=="decay" then local decay_start=envelope_mode=="ahd" and hold_x or attack_x;local clamped=math.max(decay_start,math.min(ex,mx));local seconds=(clamped-decay_start)/span*trimmed_duration/playback_rate;local value=envelope_math.time_control(seconds,envelope_math.DECAY_MAX_SECONDS);changed=value~=decay;decay=value
+    elseif self.wave_drag=="sustain" then local value=math.max(0,math.min(1,1-(my-top_y)/math.max(1,bottom_y-top_y)));changed=value~=sustain;sustain=value
+    elseif self.wave_drag=="release" then local clamped=math.max(decay_x,math.min(ex,mx));local seconds=(ex-clamped)/span*trimmed_duration/playback_rate;local value=envelope_math.time_control(seconds,envelope_math.RELEASE_MAX_SECONDS);changed=value~=release;release=value end
   elseif not r.ImGui_IsMouseDown(c,0) then self.wave_drag=nil end
   local fade_summary=string.format("Fade In %s   Fade Out %s",
     envelope_math.format_time(envelope_math.time_seconds(fade_in,envelope_math.FADE_MAX_SECONDS)),
     envelope_math.format_time(envelope_math.time_seconds(fade_out,envelope_math.FADE_MAX_SECONDS)))
-  local tooltip=show_adsr and string.format("Drag Start/End, fade triangles, or A/D/S handles\nA %s   D %s   S %s   R %s (generic)\n%s\nRight-click the nearest handle to reset it",
-    envelope_value_text("attack",attack),envelope_value_text("decay",decay),envelope_value_text("sustain",sustain),envelope_value_text("release",release),fade_summary)
+  local tooltip=show_adsr and (envelope_mode=="ahd" and string.format("Drag Start/End, fade triangles, or A/H/D handles\nA %s   H %s   D %s\n%s\nRight-click the nearest handle to reset it",envelope_value_text("attack",attack),envelope_value_text("hold",hold),envelope_value_text("decay",decay),fade_summary) or string.format("Drag Start/End, fade triangles, or A/D/S/R handles\nA %s   D %s   S %s   R %s\n%s\nRight-click the nearest handle to reset it",
+    envelope_value_text("attack",attack),envelope_value_text("decay",decay),envelope_value_text("sustain",sustain),envelope_value_text("release",release),fade_summary))
     or "Drag Start, End, or the small fade triangles\n"..fade_summary.."\nRight-click the nearest handle to reset it"
   self:tooltip(tooltip)
-  return changed,start_pos,end_pos,attack,decay,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve
+  return changed,start_pos,end_pos,attack,hold,decay,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve
 end
 
 function UI:sampler_controls()
@@ -2678,8 +2789,8 @@ function UI:sampler_controls()
   local pad=app:pad(); local controls=pad.default_controls
   local path=type(pad.sample)=="table" and pad.sample.path or pad.sample
   local avail=r.ImGui_GetContentRegionAvail(c)
-  local trim_changed,trim_start,trim_end,attack,decay,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve=self:waveform(path,avail,108,controls.sample_start or DEFAULTS.sample_start,controls.sample_end or DEFAULTS.sample_end,"##inspector_waveform",controls)
-  if trim_changed then controls.sample_start,controls.sample_end,controls.attack,controls.decay,controls.sustain,controls.release,controls.fade_in,controls.fade_out,controls.fade_in_curve,controls.fade_out_curve=trim_start,trim_end,attack,decay,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve;self:queue_live_pad_controls() end
+  local trim_changed,trim_start,trim_end,attack,hold,decay,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve=self:waveform(path,avail,108,controls.sample_start or DEFAULTS.sample_start,controls.sample_end or DEFAULTS.sample_end,"##inspector_waveform",controls)
+  if trim_changed then controls.sample_start,controls.sample_end,controls.attack,controls.hold,controls.sustain,controls.release,controls.fade_in,controls.fade_out,controls.fade_in_curve,controls.fade_out_curve=trim_start,trim_end,attack,hold,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve;if controls.envelope_mode=="adsr" then controls.decay=decay else controls.ahd_decay=decay end;self:queue_live_pad_controls() end
   r.ImGui_Text(c,state.sample_label(pad))
   r.ImGui_SameLine(c);if self:icon_button("##wave_previous","previous","Previous sample",27,24) then app:cycle_sample(-1) end
   r.ImGui_SameLine(c);if self:icon_button("##wave_next","next","Next sample",27,24) then app:cycle_sample(1) end
@@ -2692,13 +2803,18 @@ function UI:sampler_controls()
   local fields={
     {label="GAIN",key="volume",minimum=0,maximum=1,step=.01},{label="PAN",key="pan",minimum=0,maximum=1,step=.01},{label="TUNE",key="pitch",minimum=0,maximum=1,step=.01},
     {label="START",key="sample_start",minimum=0,maximum=1,step=.005},{label="END",key="sample_end",minimum=0,maximum=1,step=.005},
-    {label="ATTACK",key="attack",time_max=envelope.ATTACK_MAX_SECONDS,step_ms=1},
-    {label="DECAY",key="decay",time_max=envelope.DECAY_MAX_SECONDS,step_ms=10},
-    {label="SUSTAIN",key="sustain",sustain_db=true},
-    {label="RELEASE",key="release",time_max=envelope.RELEASE_MAX_SECONDS,step_ms=1},
-    {label="FADE IN",key="fade_in",time_max=envelope.FADE_MAX_SECONDS,step_ms=1},
-    {label="FADE OUT",key="fade_out",time_max=envelope.FADE_MAX_SECONDS,step_ms=1},
   }
+  fields[#fields+1]={label="ATTACK",key="attack",time_max=envelope.ATTACK_MAX_SECONDS,step_ms=1}
+  if controls.envelope_mode=="adsr" then
+    fields[#fields+1]={label="DECAY",key="decay",time_max=envelope.DECAY_MAX_SECONDS,step_ms=10}
+    fields[#fields+1]={label="SUSTAIN",key="sustain",sustain_db=true}
+    fields[#fields+1]={label="RELEASE",key="release",time_max=envelope.RELEASE_MAX_SECONDS,step_ms=1}
+  else
+    fields[#fields+1]={label="HOLD",key="hold",time_max=envelope.HOLD_MAX_SECONDS,step_ms=1}
+    fields[#fields+1]={label="DECAY",key="ahd_decay",time_max=envelope.DECAY_MAX_SECONDS,step_ms=10}
+  end
+  fields[#fields+1]={label="FADE IN",key="fade_in",time_max=envelope.FADE_MAX_SECONDS,step_ms=1}
+  fields[#fields+1]={label="FADE OUT",key="fade_out",time_max=envelope.FADE_MAX_SECONDS,step_ms=1}
   local field_width=math.max(72,math.min(112,(avail-12)/4))
   for index,f in ipairs(fields) do
     if index>1 and (index-1)%4~=0 then r.ImGui_SameLine(c) end
@@ -2912,24 +3028,30 @@ function UI:pads()
   if show_quick_wave then
     r.ImGui_Separator(c)
     local path=type(pad.sample)=="table" and pad.sample.path or pad.sample
-    local changed,start_pos,end_pos,attack,decay,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve=self:waveform(path,avail,quick_wave_height,controls.sample_start or DEFAULTS.sample_start,controls.sample_end or DEFAULTS.sample_end,"##quick_pad_waveform",controls)
+    local changed,start_pos,end_pos,attack,hold,decay,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve=self:waveform(path,avail,quick_wave_height,controls.sample_start or DEFAULTS.sample_start,controls.sample_end or DEFAULTS.sample_end,"##quick_pad_waveform",controls)
     if changed then
       self:apply_selected_pad_control_edit(function(target_controls)
-        target_controls.sample_start,target_controls.sample_end,target_controls.attack,target_controls.decay,target_controls.sustain,target_controls.release,target_controls.fade_in,target_controls.fade_out,target_controls.fade_in_curve,target_controls.fade_out_curve=start_pos,end_pos,attack,decay,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve
-      end,true)
+        target_controls.sample_start,target_controls.sample_end,target_controls.attack,target_controls.hold,target_controls.sustain,target_controls.release,target_controls.fade_in,target_controls.fade_out,target_controls.fade_in_curve,target_controls.fade_out_curve=start_pos,end_pos,attack,hold,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve
+        if target_controls.envelope_mode=="adsr" then target_controls.decay=decay else target_controls.ahd_decay=decay end
+     end,true)
     end
      r.ImGui_Separator(c)
-     r.ImGui_TextDisabled(c,"PLAYBACK")
-     r.ImGui_SameLine(c,0,8)
-     -- Use the same restrained, underlined tabs as the lane global links,
-     -- while spelling these important playback modes out in full.
-     local playback_gap=4
+     local playback_gap=3
+     -- Reserve the complete knob row inside the scrollbar-adjusted content
+     -- width. Compress the playback tabs, not the knobs or their vertical position.
+     local function label_width(text)
+       -- Only the width belongs in layout arithmetic, not extra API returns.
+       return tonumber((r.ImGui_CalcTextSize(c,text))) or 0
+     end
+     local engine_knob_size=math.max(32,label_width("GREL"),label_width("RES"),label_width(controls.drive_character=="soft" and "SOFT" or "HARD"),label_width(FILTER_LABELS[filter_type_index(controls.filter_type)+1]))
+     local playback_width=r.ImGui_GetContentRegionAvail(c)
+     local playback_tab_scale=math.min(1,math.max(.1,(playback_width-2-4*engine_knob_size-15-8-3*playback_gap)/198))
      local function playback_tab(id,label,width,selected,tooltip)
        r.ImGui_PushStyleColor(c,r.ImGui_Col_Button(),C.panel2)
        r.ImGui_PushStyleColor(c,r.ImGui_Col_ButtonHovered(),C.hover)
        r.ImGui_PushStyleColor(c,r.ImGui_Col_ButtonActive(),C.button)
        r.ImGui_PushStyleColor(c,r.ImGui_Col_Text(),selected and C.text or C.muted)
-       local hit=r.ImGui_Button(c,label.."##"..id,width,26)
+       local hit=r.ImGui_Button(c,label.."##"..id,width*playback_tab_scale,22)
        r.ImGui_PopStyleColor(c,4)
        local x1,y1=r.ImGui_GetItemRectMin(c);local x2,y2=r.ImGui_GetItemRectMax(c)
        if selected then r.ImGui_DrawList_AddLine(r.ImGui_GetWindowDrawList(c),x1+6,y2-2,x2-6,y2-2,C.playhead,2) end
@@ -2937,25 +3059,20 @@ function UI:pads()
        return hit
      end
      local gate_mode=controls.playback_mode=="gate"
-     if playback_tab("quick_playback_one","ONE SHOT",76,not gate_mode,"One Shot: play the full sample") then self:apply_selected_pad_controls({playback_mode="one_shot"},true) end
+     if playback_tab("quick_playback_one","ONE SHOT",70,not gate_mode,"One Shot: play the full sample") then self:apply_selected_pad_controls({playback_mode="one_shot"},true) end
      r.ImGui_SameLine(c,0,playback_gap)
-     if playback_tab("quick_playback_gate","GATE",52,gate_mode,"Gate: follow note length and note-off") then self:apply_selected_pad_controls({playback_mode="gate"},true) end
+     if playback_tab("quick_playback_gate","GATE",38,gate_mode,"Gate: follow note length and note-off") then self:apply_selected_pad_controls({playback_mode="gate"},true) end
      r.ImGui_SameLine(c,0,playback_gap)
      local envelope_enabled=controls.envelope_enabled==true or controls.envelope_enabled==1
-     if playback_tab("quick_envelope_enabled","ADSR",52,envelope_enabled,"ADSR: use the waveform envelope") then self:apply_selected_pad_controls({envelope_enabled=not envelope_enabled},true) end
+     local envelope_mode=controls.envelope_mode=="adsr" and "adsr" or "ahd"
+     local envelope_label=envelope_mode=="adsr" and "ADSR" or "AHD"
+     local envelope_clicked=playback_tab("quick_envelope_enabled",envelope_label,42,envelope_enabled,envelope_label..": left-click to toggle; right-click to switch AHD/ADSR")
+     local envelope_mode_clicked=r.ImGui_IsItemClicked and r.ImGui_IsItemClicked(c,1)
+     if envelope_clicked then self:apply_selected_pad_controls({envelope_enabled=not envelope_enabled},true)
+     elseif envelope_mode_clicked then self:apply_selected_pad_controls({envelope_mode=envelope_mode=="ahd" and "adsr" or "ahd"},true) end
      r.ImGui_SameLine(c,0,playback_gap)
      local slide_retrigger=controls.slide_retrigger~=false
-     if playback_tab("quick_slide_retrigger","RETRIG",66,slide_retrigger,"Retrigger slides from the sample start") then self:apply_selected_pad_controls({slide_retrigger=not slide_retrigger,playback_mode="gate"},true) end
- 
-     -- Start the engine-control footer just below the playback icons without
-     -- adding a full extra line of vertical padding.
-     local _,playback_bottom_screen=r.ImGui_GetItemRectMax(c)
-     local _,window_screen_y=r.ImGui_GetWindowPos(c)
-     -- Cursor positions are content coordinates, while item/window positions
-     -- above are screen coordinates. Restore the child scroll offset so the
-     -- knob row remains below PLAYBACK when a condensed inspector is scrolled.
-     local scroll_y=r.ImGui_GetScrollY and r.ImGui_GetScrollY(c) or 0
-     local knob_row_y=playback_bottom_screen-window_screen_y+scroll_y+4
+     if playback_tab("quick_slide_retrigger","RETRIG",48,slide_retrigger,"Retrigger slides from the sample start") then self:apply_selected_pad_controls({slide_retrigger=not slide_retrigger,playback_mode="gate"},true) end
      -- Use the same audible timeline as the waveform: source duration after
      -- trim, divided by the pitch playback rate. Knob travel therefore never
      -- extends into time that cannot occur for the selected sample.
@@ -2965,37 +3082,30 @@ function UI:pads()
      local duration_transpose,duration_cents=pad_pitch_values(controls)
      local playback_rate=math.max(.000001,2^((duration_transpose+duration_cents/100)/12))
      local playable_duration=math.max(.001,source_duration*math.max(.001,trim_end-trim_start)/playback_rate)
-     local attack_seconds=envelope.time_seconds(tonumber(controls.attack) or DEFAULTS.attack,envelope.ATTACK_MAX_SECONDS)
-     local attack_limit=envelope.time_control(math.min(envelope.ATTACK_MAX_SECONDS,playable_duration),envelope.ATTACK_MAX_SECONDS)
-     local decay_limit=envelope.time_control(math.min(envelope.DECAY_MAX_SECONDS,math.max(0,playable_duration-attack_seconds)),envelope.DECAY_MAX_SECONDS)
-     local release_limit=envelope.time_control(math.min(envelope.RELEASE_MAX_SECONDS,playable_duration),envelope.RELEASE_MAX_SECONDS)
      local gate_release_limit=envelope.time_control(math.min(envelope.GATE_RELEASE_MAX_SECONDS,playable_duration),envelope.GATE_RELEASE_MAX_SECONDS)
      local engine_knobs={
       {id="gate_release",label="GREL",value=math.min(gate_release_limit,envelope.time_control((tonumber(controls.gate_release_ms) or 10)/1000,envelope.GATE_RELEASE_MAX_SECONDS)),default=math.min(gate_release_limit,envelope.time_control(.01,envelope.GATE_RELEASE_MAX_SECONDS)),min=0,max=gate_release_limit,step=.01,
         format=function(v)return envelope.format_time(envelope.time_seconds(v,envelope.GATE_RELEASE_MAX_SECONDS))end,
         store=function(target,v)target.gate_release_ms=envelope.time_seconds(v,envelope.GATE_RELEASE_MAX_SECONDS)*1000 end},
-      {id="attack",label="A",value=math.min(attack_limit,tonumber(controls.attack) or DEFAULTS.attack),default=math.min(attack_limit,DEFAULTS.attack),min=0,max=attack_limit,step=.01,
-        format=function(v)return envelope_value_text("attack",v)end,store=function(target,v)target.attack=v;target.envelope_enabled=true end},
-      {id="decay",label="D",value=math.min(decay_limit,tonumber(controls.decay) or DEFAULTS.decay),default=math.min(decay_limit,DEFAULTS.decay),min=0,max=decay_limit,step=.01,
-        format=function(v)return envelope_value_text("decay",v)end,store=function(target,v)target.decay=v;target.envelope_enabled=true end},
-      {id="sustain",label="S",value=tonumber(controls.sustain) or DEFAULTS.sustain,default=DEFAULTS.sustain,min=0,max=1,step=.01,
-        format=function(v)return envelope_value_text("sustain",v)end,store=function(target,v)target.sustain=v;target.envelope_enabled=true end},
-      {id="release",label="R",value=math.min(release_limit,tonumber(controls.release) or DEFAULTS.release),default=math.min(release_limit,DEFAULTS.release),min=0,max=release_limit,step=.01,
-        format=function(v)return envelope_value_text("release",v)end,store=function(target,v)target.release=v;target.envelope_enabled=true end},
+      {id="filter_cutoff",label=FILTER_LABELS[filter_type_index(controls.filter_type)+1],value=cutoff_control(controls.filter_cutoff_hz),default=1,min=0,max=1,step=.01,label_clickable=true,
+        format=cutoff_text,store=function(target,v)target.filter_cutoff_hz=cutoff_hz(v)end},
+      {id="filter_resonance",label="RES",value=tonumber(controls.filter_resonance)or 0,default=0,min=0,max=1,step=.01,
+        format=function(v)return string.format("%.0f%%",v*100)end,store=function(target,v)target.filter_resonance=v end},
+      {id="drive",label=(controls.drive_character=="soft" and "SOFT" or "HARD"),value=tonumber(controls.drive)or 0,default=0,min=0,max=1,step=.01,label_clickable=true,
+        format=function(v)return string.format("%.0f%%",v*100)end,store=function(target,v)target.drive=v end},
     }
-    local knob_count=#engine_knobs
-    local footer_width=math.max(0,control_row_right-control_row_x)
-    -- Five equal-width columns give the essential envelope controls room to
-    -- breathe while keeping their centers evenly distributed across the row.
-    local column_width=math.floor(footer_width/knob_count)
-    local knob_size=math.max(32,math.min(46,column_width-8))
-    local knob_row_width=column_width*knob_count
-    local knob_row_start=control_row_x+math.max(0,(footer_width-knob_row_width)*.5)
+    local knob_size=engine_knob_size
+    r.ImGui_SameLine(c,0,8)
     for index,item in ipairs(engine_knobs) do
-      r.ImGui_SetCursorPosX(c,knob_row_start+(index-1)*column_width+(column_width-knob_size)*.5)
-      r.ImGui_SetCursorPosY(c,knob_row_y)
-      local did,next_value=self:knob("##quick_engine_"..item.id,item.label,item.value,item.default,knob_size,{minimum=item.min,maximum=item.max,wheel_step=item.step,formatter=item.format})
+      if index>1 then r.ImGui_SameLine(c,0,5) end
+      local did,next_value,label_clicked=self:knob("##quick_engine_"..item.id,item.label,item.value,item.default,knob_size,{minimum=item.min,maximum=item.max,wheel_step=item.step,formatter=item.format,label_clickable=item.label_clickable,label_color=item.label_clickable and C.playhead or nil})
       if did then self:apply_selected_pad_control_edit(function(target_controls) item.store(target_controls,next_value) end,true) end
+      if item.id=="filter_cutoff" and label_clicked then
+        local next_type=(filter_type_index(controls.filter_type)+1)%#FILTER_TYPES
+        self:apply_selected_pad_controls({filter_type=FILTER_TYPES[next_type+1]},true)
+      elseif item.id=="drive" and label_clicked then
+        self:apply_selected_pad_controls({drive_character=controls.drive_character=="soft" and "hard" or "soft"},true)
+      end
     end
   end
 end
@@ -3366,8 +3476,8 @@ function UI:instrument_wave_panel(width,height)
     if renamed then app:rename_pad(name) end
     r.ImGui_SameLine(c); r.ImGui_TextDisabled(c,state.sample_label(pad))
     local available=r.ImGui_GetContentRegionAvail(c)
-    local trim_changed,trim_start,trim_end,attack,decay,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve=self:waveform(path,available,math.max(82,height-82),controls.sample_start or DEFAULTS.sample_start,controls.sample_end or DEFAULTS.sample_end,"##instrument_waveform",controls)
-    if trim_changed then controls.sample_start,controls.sample_end,controls.attack,controls.decay,controls.sustain,controls.release,controls.fade_in,controls.fade_out,controls.fade_in_curve,controls.fade_out_curve=trim_start,trim_end,attack,decay,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve;self:queue_live_pad_controls() end
+    local trim_changed,trim_start,trim_end,attack,hold,decay,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve=self:waveform(path,available,math.max(82,height-82),controls.sample_start or DEFAULTS.sample_start,controls.sample_end or DEFAULTS.sample_end,"##instrument_waveform",controls)
+    if trim_changed then controls.sample_start,controls.sample_end,controls.attack,controls.hold,controls.sustain,controls.release,controls.fade_in,controls.fade_out,controls.fade_in_curve,controls.fade_out_curve=trim_start,trim_end,attack,hold,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve;if controls.envelope_mode=="adsr" then controls.decay=decay else controls.ahd_decay=decay end;self:queue_live_pad_controls() end
     if self:icon_button("##instrument_load","load","Load or replace sample",30,27,false,C.playhead) then app:load_selected_sample() end
     r.ImGui_SameLine(c);if self:icon_button("##instrument_previous_sample","previous","Previous sample in folder",28,27) then app:cycle_sample(-1) end
     r.ImGui_SameLine(c);if self:icon_button("##instrument_next_sample","next","Next sample in folder",28,27) then app:cycle_sample(1) end
@@ -3412,13 +3522,18 @@ function UI:instrument_sampler(width,height)
     if changed then controls.sample_start=value; app:queue_pad_controls() end
     changed,value=self:slider_double("End",controls.sample_end or DEFAULTS.sample_end,0,1,"%.3f",.005)
     if changed then controls.sample_end=value; app:queue_pad_controls() end
-    r.ImGui_Text(c,"ENVELOPE")
-    local env={{"Attack","attack",DEFAULTS.attack},{"Decay","decay",DEFAULTS.decay},{"Release","release",DEFAULTS.release}}
-    for i,f in ipairs(env) do
+    r.ImGui_Text(c,"FILTER")
+    local filter_controls={
+      {"Type","filter_type",filter_type_index(controls.filter_type),0,{minimum=0,maximum=3,wheel_step=1,formatter=function(v)return FILTER_LABELS[math.floor(v+.5)+1]end},function(v)controls.filter_type=FILTER_TYPES[math.floor(v+.5)+1]end},
+      {"Cutoff","filter_cutoff_hz",cutoff_control(controls.filter_cutoff_hz),1,{minimum=0,maximum=1,wheel_step=.01,formatter=cutoff_text},function(v)controls.filter_cutoff_hz=cutoff_hz(v)end},
+      {"Resonance","filter_resonance",tonumber(controls.filter_resonance)or 0,0,{minimum=0,maximum=1,wheel_step=.01,formatter=function(v)return string.format("%.0f%%",v*100)end},function(v)controls.filter_resonance=v end},
+      {controls.drive_character=="soft" and "Soft" or "Hard","drive",tonumber(controls.drive)or 0,0,{minimum=0,maximum=1,wheel_step=.01,formatter=function(v)return string.format("%.0f%%",v*100)end,label_clickable=true,label_color=C.playhead},function(v)controls.drive=v end},
+    }
+    for i,f in ipairs(filter_controls) do
       if i>1 then r.ImGui_SameLine(c) end
-      local current=controls[f[2]]; if current==nil then current=f[3] end
-      local did,next_value=self:knob("##instrument_"..f[2],f[1],current,f[3],56,{formatter=function(v)return envelope_value_text(f[2],v)end,wheel_step=.01})
-      if did then controls[f[2]]=next_value; self:queue_live_pad_controls() end
+      local did,next_value,label_clicked=self:knob("##instrument_"..f[2],f[1],f[3],f[4],56,f[5])
+      if did then f[6](next_value);self:queue_live_pad_controls() end
+      if f[2]=="drive" and label_clicked then controls.drive_character=controls.drive_character=="soft" and "hard" or "soft";self:queue_live_pad_controls() end
     end
     r.ImGui_Separator(c)
     r.ImGui_Text(c,"PAD GROUPS")
@@ -3538,16 +3653,24 @@ function UI:instrument_sampler_docked(width,height)
     if changed then set_pad_pitch(controls,transpose,value);app:queue_pad_controls() end
     r.ImGui_EndGroup(c)
     r.ImGui_SameLine(c);r.ImGui_BeginGroup(c)
-    r.ImGui_TextDisabled(c,"ADSR")
-    local env={{"A","attack",DEFAULTS.attack},{"D","decay",DEFAULTS.decay},{"S","sustain",DEFAULTS.sustain},{"R","release",DEFAULTS.release}}
-    for i,field in ipairs(env) do
+    r.ImGui_TextDisabled(c,"FILTER")
+    local filter_controls={
+      {"TYPE",filter_type_index(controls.filter_type),0,0,3,function(v)return FILTER_LABELS[math.floor(v+.5)+1]end,function(v)controls.filter_type=FILTER_TYPES[math.floor(v+.5)+1]end},
+      {"CUT",cutoff_control(controls.filter_cutoff_hz),1,0,1,cutoff_text,function(v)controls.filter_cutoff_hz=cutoff_hz(v)end},
+      {"RES",tonumber(controls.filter_resonance)or 0,0,0,1,function(v)return string.format("%.0f%%",v*100)end,function(v)controls.filter_resonance=v end},
+      {controls.drive_character=="soft" and "SOFT" or "HARD",tonumber(controls.drive)or 0,0,0,1,function(v)return string.format("%.0f%%",v*100)end,function(v)controls.drive=v end},
+    }
+    for i,field in ipairs(filter_controls) do
       if i>1 then r.ImGui_SameLine(c) end
-      local current=controls[field[2]];if current==nil then current=field[3] end
-      local changed,value=r.ImGui_VSliderDouble(c,"##docked_"..field[2],26,68,current,0,1,"")
-      if r.ImGui_IsItemHovered(c) then self:tooltip(envelope_value_text(field[2],value)) end
+      local changed,value=r.ImGui_VSliderDouble(c,"##docked_filter_"..field[1],32,68,field[2],field[4],field[5],"")
+      if r.ImGui_IsItemHovered(c) then self:tooltip(field[6](value)) end
       if r.ImGui_IsItemHovered(c) and r.ImGui_IsMouseClicked and r.ImGui_IsMouseClicked(c,1) then value=field[3];changed=true end
-      if changed then controls[field[2]]=value;self:queue_live_pad_controls() end
-      local label_width=r.ImGui_CalcTextSize(c,field[1]);r.ImGui_SetCursorPosX(c,r.ImGui_GetCursorPosX(c)+math.max(0,(26-label_width)/2));r.ImGui_TextDisabled(c,field[1])
+      if changed then field[7](value);self:queue_live_pad_controls() end
+      if i==4 then
+        if r.ImGui_Button(c,field[1].."##docked_drive_character",32,18) then controls.drive_character=controls.drive_character=="soft" and "hard" or "soft";self:queue_live_pad_controls() end
+      else
+        local label_width=r.ImGui_CalcTextSize(c,field[1]);r.ImGui_SetCursorPosX(c,r.ImGui_GetCursorPosX(c)+math.max(0,(32-label_width)/2));r.ImGui_TextDisabled(c,field[1])
+      end
     end
     r.ImGui_EndGroup(c)
     r.ImGui_SameLine(c);r.ImGui_BeginGroup(c)
@@ -3617,7 +3740,7 @@ function UI:property_value_from_mouse(property,top,bottom)
   local _,mouse_y=self.host.ImGui_GetMousePos(self.ctx)
   local normalized=1-math.max(0,math.min(1,(mouse_y-top)/math.max(1,bottom-top)))
   local value=property.min+normalized*(property.max-property.min)
-  if property.kind~="double" then value=math.floor(value+.5) end
+  if property.kind~="double" and property.kind~="lock" then value=math.floor(value+.5) end
   return math.max(property.min,math.min(property.max,value))
 end
 
@@ -3625,6 +3748,12 @@ function UI:step_property_value(lane,step,property)
   if property.kind=="divide" then return repeat_divide(lane,step) end
   local value=step[property.key]
   if property.kind=="pan" and value==false then return 0 end
+  if property.kind=="lock" and (value==false or value==nil) then
+    local pad=self.app and self.app.rack and self.app.rack.pads[self.app.selected_pad]
+    local controls=pad and pad.default_controls or{}
+    value=tonumber(controls[property.base]) or (property.key=="filter_cutoff_lock" and 20000 or 0)
+    if property.key=="filter_cutoff_lock" then value=cutoff_control(value) end
+  end
   return value
 end
 
@@ -3666,7 +3795,7 @@ function UI:paint_step_property(lane,property,position,value)
     if step and step.enabled then
       local amount=position==from_position and 1 or (step_index-from_position)/(position-from_position)
       local next_value=from_value+(value-from_value)*amount
-      if property.kind~="double" then next_value=math.floor(next_value+.5) end
+      if property.kind~="double" and property.kind~="lock" then next_value=math.floor(next_value+.5) end
       next_value=math.max(property.min,math.min(property.max,next_value))
       if self:step_property_value(lane,step,property)~=next_value then self:set_step_property_value(lane,step,property,next_value);changed=true end
     end
@@ -3725,7 +3854,7 @@ function UI:parameter_editor(height)
         r.ImGui_DrawList_AddLine(draw,(x1+x2)/2,fill_top,(x1+x2)/2,effective_y,0xF0A02B88,1)
         r.ImGui_DrawList_AddLine(draw,x1+2,effective_y,x2-2,effective_y,C.value_marker or 0xF0A02BFF,2)
       end
-      local shown=string.format(property.format,effective or value)
+      local shown=type(property.format)=="function" and property.format(effective or value) or string.format(property.format,effective or value)
       local text_width=r.ImGui_CalcTextSize(c,shown)
       r.ImGui_DrawList_AddText(draw,x1+math.max(0,(GRID_CELL_WIDTH-text_width)/2),column_top+2,step.enabled and C.text or C.muted,shown)
       if play_step==i then r.ImGui_DrawList_AddRectFilled(draw,x1+2,column_bottom-5,x2-2,column_bottom-1,playback_accent_color(),1) end
@@ -3761,7 +3890,7 @@ function UI:parameter_editor(height)
         local step=lane.steps[position]
         if step and step.enabled then
           local value=start_value+(end_value-start_value)*(position-first)/span
-          if property.kind~="double" then value=math.floor(value+.5) end
+          if property.kind~="double" and property.kind~="lock" then value=math.floor(value+.5) end
           value=math.max(property.min,math.min(property.max,value))
           if self:step_property_value(lane,step,property)~=value then self:set_step_property_value(lane,step,property,value);changed=true end
         end
@@ -3774,9 +3903,9 @@ function UI:parameter_editor(height)
     if r.ImGui_IsItemHovered(c) and r.ImGui_GetMouseWheel then
       local wheel=r.ImGui_GetMouseWheel(c)
       if wheel~=0 then
-        local step=lane.steps[target];local value=display_value(step);local increment=property.kind=="double" and 1 or 1
+        local step=lane.steps[target];local value=display_value(step);local increment=property.kind=="lock" and .01 or 1
         local next_value=math.max(property.min,math.min(property.max,value+(wheel>0 and increment or -increment)))
-        if property.kind~="double" then next_value=math.floor(next_value+.5) end
+        if property.kind~="double" and property.kind~="lock" then next_value=math.floor(next_value+.5) end
         if step.enabled and display_value(step)~=next_value then self:set_step_property_value(lane,step,property,next_value);app.selected_step=target;app:mark_dirty(false);self.wheel_commit=true end
       end
     end
@@ -4239,6 +4368,8 @@ function UI:frame()
   local section_started=self:perf_begin()
   if now>=(self.next_project_poll or 0) then
     self.next_project_poll=now+.05
+    self.app:verify_startup_sync(now)
+    self.app:verify_runtime_rate(now)
     self.app:sync_engine_variation()
     self.app:follow_engine_variation_display()
     if self.app.follow_variation_events then self.app:poll_variation_event_selection(false) end
@@ -4360,6 +4491,8 @@ function UI:frame()
   self:eula_viewer()
   r.ImGui_PopStyleVar(c,6)
   r.ImGui_PopStyleColor(c,19)
+  self:process_pending_pad_drop()
+  self:process_pending_diagnostic()
   self:flush_audition(not self.open)
   self:perf_end("window finalize UI",section_started)
   section_started=self:perf_begin()

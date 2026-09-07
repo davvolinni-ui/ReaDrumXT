@@ -11,6 +11,7 @@ slider6:0<0,16777215,1>-Diagnostic note-ons received
 slider7:0<0,16777215,1>-Diagnostic voices started
 slider8:0<0,256,1>-Diagnostic active voices
 slider9:0<0,256,1>-Diagnostic active voice peak
+slider10:0<0,9007199254740991,1>-capture instance v1
 
 in_pin:Bus 1 L
 in_pin:Bus 1 R
@@ -86,6 +87,19 @@ out_pin:Delay Send L
 out_pin:Delay Send R
 
 @init
+capture_id=max(1,floor(time_precise()*1000000));
+capture_active=0;
+function capture_block(base) (
+  capture_base=base;capture_active=0;
+  gmem[base]==capture_id ? (
+    capture_active=gmem[base+1]>time_precise();
+    capture_active ? (gmem[base+2]+=1;gmem[base+3]=srate;);
+  );
+);
+function capture_count(index) (
+  capture_active ? (gmem[capture_base+16+index]=min(16777215,gmem[capture_base+16+index]+1););
+);
+slider10=capture_id;
 ext_noinit=1;
 ext_midi_bus=1;
 
@@ -96,31 +110,40 @@ COMMAND_STRIDE=2080;
 PATH_OFFSET=32;
 PATH_CAP=2048;
 CONTROL_OFFSET=34000;
-CONTROL_WORDS=25;
+CONTROL_WORDS=30;
 STATUS_OFFSET=35000;
 METER_OFFSET=35100;
 AUDIO_MASK_OFFSET=35200;
 SLIDE_OFFSET=35300;
 LIVE_OFFSET=35400;
 AUDITION_OFFSET=35500;
+ENVELOPE_OFFSET=35600;
 
 SLOTS=16;
 MAX_VOICES=256;
-VOICE_WORDS=25;
+VOICE_WORDS=27;
 VOICES=0;
 META=8192;
 META_WORDS=12;
 CTRL=9000;
-CTRL_WORDS=25;
-PAN_STATE=9400;
-TRANSIENT_SHIFT=9450;
-LEGATO_STATE=9470;
+CTRL_WORDS=30;
+// CTRL spans 9000..9479 (16 slots x 30 words). Performance state must
+// not alias pad controls: either writer would corrupt the other's values.
+PAN_STATE=9740;
+TRANSIENT_SHIFT=9760;
+LEGATO_STATE=9780;
 PITCH_CENTS=9640;
 SLOT_PEAK_L=9500;SLOT_PEAK_R=9520;
 AUDIBLE_GAIN=9540;AUDIBLE_TARGET=9560;
 SLIDE_RETRIGGER=9600;SLIDE_XFADE=9620;
 LAST_AUDITION=9660;
 GLIDE_OVERRIDE=9680;
+ENVELOPE_MODE=9700;HOLD_SECONDS=9720;
+FILTER_TYPE=10000;FILTER_B0=10256;FILTER_B1=10512;FILTER_B2=10768;FILTER_A1=11024;FILTER_A2=11280;
+FILTER_ZL1=11536;FILTER_ZL2=11792;FILTER_ZR1=12048;FILTER_ZR2=12304;
+VOICE_CUTOFF=13000;VOICE_RESONANCE=13256;VOICE_DRIVE=13512;
+PENDING_CUTOFF=13800;PENDING_RESONANCE=13816;PENDING_DRIVE=13832;
+memset(PENDING_CUTOFF,-1,16);memset(PENDING_RESONANCE,-1,16);memset(PENDING_DRIVE,-1,16);
 
 // Two fixed buffers per pad allow the loader to fill an inactive region and
 // let @block switch to it atomically. 3.5m items is about 36 seconds of stereo
@@ -137,11 +160,23 @@ bank_base=1800000+(slider5|0)*8*BANK_STRIDE+(slider1|0)*BANK_STRIDE;
 active_bank_base=bank_base;
 
 function clamp01(x)(max(0,min(1,x)););
+function soft_tanh(x)local(e)(x=max(-10,min(10,x));e=exp(2*x);(e-1)/(e+1););
 function curve01(x,c)local(a)(x=clamp01(x);c=clamp01(c);a=1-x;a*a*0+2*a*x*c+x*x;);
 function meta(slot,field)(slot*META_WORDS+field;);
 function ctrl(slot,field)(slot*CTRL_WORDS+field;);
 function voice(v,field)(v*VOICE_WORDS+field;);
 function region_base(slot,which)(SAMPLE_BASE+(slot*2+which)*REGION_ITEMS;);
+function configure_filter(v,slot,clear_state)local(b,c,t,cut,res,q,w,cs,sn,alpha,a0,b0,b1,b2,a1,a2)(
+  b=voice(v,0);c=ctrl(slot,0);t=max(0,min(3,CTRL[c+25]|0));
+  cut=VOICE_CUTOFF[v]>=0?20*pow(1000,clamp01(VOICE_CUTOFF[v])):max(20,min(20000,CTRL[c+26]));cut=min(cut,srate*.49);res=VOICE_RESONANCE[v]>=0?clamp01(VOICE_RESONANCE[v]):clamp01(CTRL[c+27]);
+  q=.5*pow(40,res);w=2*$pi*cut/srate;cs=cos(w);sn=sin(w);alpha=sn/(2*q);a0=1+alpha;
+  t==1?(b0=(1-cs)*.5;b1=1-cs;b2=b0;):
+  t==2?(b0=(1+cs)*.5;b1=-(1+cs);b2=b0;):
+  t==3?(b0=sn*.5;b1=0;b2=-b0;):(b0=1;b1=0;b2=0;alpha=0;a0=1;);
+  a1=-2*cs;a2=1-alpha;
+  FILTER_TYPE[v]=t;FILTER_B0[v]=b0/a0;FILTER_B1[v]=b1/a0;FILTER_B2[v]=b2/a0;FILTER_A1[v]=a1/a0;FILTER_A2[v]=a2/a0;
+  clear_state?(FILTER_ZL1[v]=0;FILTER_ZL2[v]=0;FILTER_ZR1[v]=0;FILTER_ZR2[v]=0;);
+);
 function cubic_sample(base,channels,frame,channel,frac,last)local(f0,f2,f3,y0,y1,y2,y3,a0,a1,a2,a3)(
   f0=max(0,frame-1);f2=min(last,frame+1);f3=min(last,frame+2);
   y0=base[f0*channels+channel];y1=base[frame*channels+channel];y2=base[f2*channels+channel];y3=base[f3*channels+channel];
@@ -208,6 +243,12 @@ function reset_controls(slot)local(c)(
   CTRL[c+22]=0;    // reverb send amplitude
   CTRL[c+23]=0;    // delay send amplitude
   CTRL[c+24]=0;    // monophonic glide seconds
+  CTRL[c+25]=0;    // filter type: 0 off, 1 low-pass, 2 high-pass, 3 band-pass
+  CTRL[c+26]=20000;// filter cutoff Hz
+  CTRL[c+27]=0;    // filter resonance normalized 0..1
+  CTRL[c+28]=0;    // independent drive amount normalized 0..1
+  CTRL[c+29]=0;    // drive character: 0 hard, 1 soft
+  ENVELOPE_MODE[slot]=0;HOLD_SECONDS[slot]=0;
   SLIDE_RETRIGGER[slot]=1;SLIDE_XFADE[slot]=0.02;
   AUDIBLE_GAIN[slot]=1;AUDIBLE_TARGET[slot]=1;
   PAN_STATE[slot]=0;
@@ -320,9 +361,10 @@ function latest_glide_voice(slot)local(v,found,newest,b,remaining)(
   );found;
 );
 
-function start_voice(slot,note,vel)local(storage,m,c,v,frames,startf,endf,rate,start_rate,gain,pan,left,right,a,d,sus,out,glide,glide_voice,b,glide_samples,legato,retrigger,xfade,soft,self_choke)(
+function start_voice(slot,note,vel)local(storage,m,c,v,frames,startf,endf,rate,start_rate,gain,pan,left,right,a,h,d,sus,out,glide,glide_voice,b,glide_samples,legato,retrigger,xfade,soft,self_choke,env_mode,cutoff_lock,resonance_lock,drive_lock)(
   legato=LEGATO_STATE[slot];LEGATO_STATE[slot]=0;
   soft=max(0,min(1,TRANSIENT_SHIFT[slot]));TRANSIENT_SHIFT[slot]=0;
+  cutoff_lock=PENDING_CUTOFF[slot];resonance_lock=PENDING_RESONANCE[slot];drive_lock=PENDING_DRIVE[slot];PENDING_CUTOFF[slot]=-1;PENDING_RESONANCE[slot]=-1;PENDING_DRIVE[slot]=-1;
   c=ctrl(slot,0);storage=max(0,min(15,CTRL[c+21]|0));m=meta(storage,0);frames=META[m+1];
   frames>0 ? (
     rate=pow(2,(note-69+CTRL[c+3]+(CTRL[c+4]+PITCH_CENTS[slot])/100)/12);
@@ -343,19 +385,23 @@ function start_voice(slot,note,vel)local(storage,m,c,v,frames,startf,endf,rate,s
       gain=CTRL[c+1]*(CTRL[c+16]+(1-CTRL[c+16])*vel/127);
       pan=max(-1,min(1,CTRL[c+2]+PAN_STATE[slot]));
       left=cos((pan+1)*$pi/4);right=sin((pan+1)*$pi/4);
-      a=max(0,CTRL[c+5]);d=max(0,CTRL[c+6]);sus=clamp01(CTRL[c+7]);out=max(0,min(15,CTRL[c+15]|0));
+      a=max(0,CTRL[c+5]);h=max(0,HOLD_SECONDS[slot]);d=max(0,CTRL[c+6]);env_mode=ENVELOPE_MODE[slot]|0;sus=env_mode?0:clamp01(CTRL[c+7]);out=max(0,min(15,CTRL[c+15]|0));
       b=voice(v,0);VOICES[b]=1;VOICES[b+1]=slot;VOICES[b+2]=note;
       VOICES[b+3]=startf;VOICES[b+4]=endf;VOICES[b+5]=start_rate;
       // Keep raw velocity so live gain/pan edits can be applied to this voice.
       VOICES[b+6]=vel;VOICES[b+7]=0;VOICES[b+8]=out;
-      VOICES[b+9]=a>0?0:1;VOICES[b+10]=a>0?1:(d>0?2:0);
-      VOICES[b+11]=sus;VOICES[b+12]=voice_clock;VOICES[b+13]=a>0?1/(a*srate):(d>0?(1-sus)/(d*srate):0);
+      VOICES[b+9]=a>0?0:1;VOICES[b+10]=a>0?1:(env_mode?(h>0?4:2):(d>0?2:0));
+      VOICES[b+11]=sus;VOICES[b+12]=voice_clock;VOICES[b+13]=a>0?1/(a*srate):(d>0?(1-sus)/(d*srate):(env_mode?1:0));
       VOICES[b+14]=META[m]|0;VOICES[b+15]=META[m+2]|0;VOICES[b+16]=storage;VOICES[b+17]=startf;VOICES[b+18]=rate;
       glide_samples=glide>0?max(1,floor(glide*srate)):0;VOICES[b+19]=glide_samples>0?(rate-start_rate)/glide_samples:0;VOICES[b+20]=glide_samples;
       VOICES[b+21]=xfade>0?max(1,floor(xfade*srate)):0;VOICES[b+22]=VOICES[b+21];
       VOICES[b+23]=soft>0?max(1,floor(soft*.01*srate)):0;VOICES[b+24]=0;
+      VOICES[b+25]=max(0,floor(h*srate));VOICES[b+26]=env_mode;
+      VOICE_CUTOFF[v]=cutoff_lock;VOICE_RESONANCE[v]=resonance_lock;VOICE_DRIVE[v]=drive_lock;
+      configure_filter(v,slot,1);
       active_voice_limit=max(active_voice_limit,v+1);
       voices_started=(voices_started%16777214)+1;slider7=voices_started;
+      capture_count(2048+slot);
       voice_clock+=1;
     );
   );
@@ -384,8 +430,9 @@ function refresh_slot_voices(slot)local(v,b,c,rate,a,d,sus,stage,env,remaining)(
       remaining=max(1,VOICES[b+20]);
       VOICES[b+20]>0?(VOICES[b+18]=rate;VOICES[b+19]=(rate-VOICES[b+5])/remaining;):(VOICES[b+5]=rate;VOICES[b+18]=rate;);
       VOICES[b+8]=max(0,min(15,CTRL[c+15]|0));
-      a=max(0,CTRL[c+5]);d=max(0,CTRL[c+6]);sus=clamp01(CTRL[c+7]);
+      a=max(0,CTRL[c+5]);d=max(0,CTRL[c+6]);sus=VOICES[b+26]?0:clamp01(CTRL[c+7]);
       VOICES[b+11]=sus;stage=VOICES[b+10]|0;env=VOICES[b+9];
+      configure_filter(v,slot,0);
       stage==1?(a>0?VOICES[b+13]=1/(a*srate):(VOICES[b+9]=1;VOICES[b+10]=d>0?2:0;VOICES[b+13]=d>0?(1-sus)/(d*srate):0;)):
       stage==2?(d>0?VOICES[b+13]=max(0,1-sus)/(d*srate):(VOICES[b+9]=sus;VOICES[b+10]=0;VOICES[b+13]=0;));
     );
@@ -461,6 +508,7 @@ slider3=(slider3%16777214)+1;
 load_slot=0;loop(SLOTS,process_load(load_slot);load_slot+=1;);
 
 @block
+slider10=capture_id;capture_block(8000000+(slider1|0)*2304);
 slider2=(slider2%16777214)+1;
 diagnostic_active=0;diagnostic_v=0;loop(active_voice_limit,VOICES[voice(diagnostic_v,0)]?diagnostic_active+=1;diagnostic_v+=1;);slider8=diagnostic_active;slider9=max(slider9,diagnostic_active);
 // Apply per-slot controls by revision, then commit completed inactive buffers.
@@ -468,6 +516,7 @@ i=0;loop(SLOTS,
   src=bank_base+CONTROL_OFFSET+i*CONTROL_WORDS;revision=gmem[src];c=ctrl(i,0);
   revision!=CTRL[c] ? (
     j=0;loop(CTRL_WORDS,CTRL[c+j]=gmem[src+j];j+=1;);
+    env_src=bank_base+ENVELOPE_OFFSET+i*2;ENVELOPE_MODE[i]=gmem[env_src]|0;HOLD_SECONDS[i]=max(0,gmem[env_src+1]);
     refresh_slot_voices(i);
   ) : revision==0 ? (
     // ext_noinit preserves local controls through a live source update. If
@@ -492,6 +541,7 @@ i=0;loop(SLOTS,
 );
 
 while(midirecv(offset,msg1,msg2,msg3))(
+  (msg1&240)==144&&msg3>0?capture_count((msg1&15)*128+msg2);
   input_bus=midi_bus;
   input_bus==(slider1|0) ? (
     status=msg1&$xF0;slot=msg1&$x0F;
@@ -504,6 +554,9 @@ while(midirecv(offset,msg1,msg2,msg3))(
     status==$xB0 && msg2==10 ? PAN_STATE[slot]=(msg3-64)/63 :
     status==$xB0 && msg2==68 ? LEGATO_STATE[slot]=msg3>0 :
     status==$xB0 && msg2==74 ? TRANSIENT_SHIFT[slot]=clamp01(msg3/127) :
+    status==$xB0 && msg2==20 ? PENDING_CUTOFF[slot]=clamp01(msg3/127) :
+    status==$xB0 && msg2==21 ? PENDING_RESONANCE[slot]=clamp01(msg3/127) :
+    status==$xB0 && msg2==22 ? PENDING_DRIVE[slot]=clamp01(msg3/127) :
     status==$xE0 ? PITCH_CENTS[slot]=max(-100,min(100,((msg2+(msg3<<7))-8192)*100/4096));
   );
   // A bank consumes only its assigned bus, but every event must continue to
@@ -538,11 +591,24 @@ v=0;loop(active_voice_limit,
         sample_l=cubic_sample(base,channels,frame,0,frac,last);
         sample_r=cubic_sample(base,channels,frame,1,frac,last);
       );
+      b=voice(v,0);FILTER_TYPE[v] ? (
+        filter_in=sample_l;sample_l=FILTER_B0[v]*filter_in+FILTER_ZL1[v];FILTER_ZL1[v]=FILTER_B1[v]*filter_in-FILTER_A1[v]*sample_l+FILTER_ZL2[v];FILTER_ZL2[v]=FILTER_B2[v]*filter_in-FILTER_A2[v]*sample_l;
+        filter_in=sample_r;sample_r=FILTER_B0[v]*filter_in+FILTER_ZR1[v];FILTER_ZR1[v]=FILTER_B1[v]*filter_in-FILTER_A1[v]*sample_r+FILTER_ZR2[v];FILTER_ZR2[v]=FILTER_B2[v]*filter_in-FILTER_A2[v]*sample_r;
+      );
+      drive=VOICE_DRIVE[v]>=0?clamp01(VOICE_DRIVE[v]):clamp01(CTRL[ctrl(slot,28)]);drive>0 ? (
+        drive_boost=pow(2,drive*6);
+        CTRL[ctrl(slot,29)]>=.5 ? (
+          drive_norm=max(.000001,soft_tanh(drive_boost));sample_l=soft_tanh(sample_l*drive_boost)/drive_norm;sample_r=soft_tanh(sample_r*drive_boost)/drive_norm;
+        ):(
+          sample_l=max(-1,min(1,sample_l*drive_boost));sample_r=max(-1,min(1,sample_r*drive_boost));
+        );
+      );
       env=VOICES[b+9];stage=VOICES[b+10]|0;
       stage!=0 ? (
         sus=VOICES[b+11];step=VOICES[b+13];
-        stage==1 ? (env+=step;env>=1?(env=1;d=CTRL[ctrl(slot,6)];stage=d>0?2:0;step=d>0?(1-sus)/(d*srate):0;);) :
-        stage==2 ? (env-=step;env<=sus?(env=sus;stage=0;);) :
+        stage==1 ? (env+=step;env>=1?(env=1;d=CTRL[ctrl(slot,6)];stage=VOICES[b+26]?(VOICES[b+25]>0?4:2):(d>0?2:0);step=d>0?(1-sus)/(d*srate):(VOICES[b+26]?1:0););) :
+        stage==2 ? (env-=step;env<=sus?(env=sus;VOICES[b+26]?(VOICES[b]=0;):(stage=0;););) :
+        stage==4 ? (VOICES[b+25]-=1;VOICES[b+25]<=0?(d=CTRL[ctrl(slot,6)];d>0?(stage=2;step=1/(d*srate);):(env=0;VOICES[b]=0;););) :
         stage==3 ? (env-=step;env<=0?(env=0;VOICES[b]=0;););
         VOICES[b+9]=env;VOICES[b+10]=stage;VOICES[b+13]=step;
       );

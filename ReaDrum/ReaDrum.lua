@@ -1,8 +1,12 @@
 -- @description ReaDrumXT - Drum Sampler and Polymetric Step Sequencer
--- @version 0.1.5
+-- @version 0.1.6
 -- @author davvolinni-ui
 -- @changelog
---   Added live controls and piano-roll tools; fixed bank selection targeting stale pads.
+--   Fixed overlapping sampler control memory affecting startup pan, transient and legato state.
+--   Improved runtime restoration, playback-mode recovery and sample-rate handling.
+--   Extended sequencer transport-map coverage; corrected inherited Drive/filter handling.
+--   Added on-demand diagnostics and a ten-second playback capture in Settings > Support.
+--   Adjusted compact playback controls to keep the Drive knob on the same row.
 -- @link
 --   Support https://forum.cockos.com/showthread.php?t=310870
 --   Repository https://github.com/davvolinni-ui/ReaDrumXT
@@ -21,6 +25,19 @@ package.path = scripts .. "/?.lua;" .. scripts .. "/?/init.lua;" .. package.path
 local Controller = require("ReaDrum.app.controller")
 local UI = require("ReaDrum.app.ui")
 local EULA = require("ReaDrum.app.eula")
+
+-- Startup actions run before a command-line project is necessarily visible.
+-- A short-lived request token prevents a diagnostic instance from briefly
+-- launching the production UI and stealing ownership from the user's session.
+local function is_diagnostic_launch()
+  local separator=package.config:sub(1,1)
+  local request=reaper.GetResourcePath()..separator.."Data"..separator.."ReaDrum"..separator.."diagnostic-request.txt"
+  local file=io.open(request,"rb");if not file then return false end
+  local text=file:read("*a");file:close()
+  local stamp=tonumber(text and text:match("[\r\n](%d+)%s*$"))
+  return stamp and math.abs(os.time()-stamp)<=120
+end
+if is_diagnostic_launch()then return end
 
 local launch_started=reaper.time_precise()
 -- ReaScripts are deferred processes: running the action again does not stop

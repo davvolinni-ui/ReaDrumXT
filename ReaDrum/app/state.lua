@@ -100,7 +100,7 @@ function M.new_rack()
   for index = 1, 128 do
     local pad = model.new_pad({ logical_index = index, name = string.format("Pad %03d", index), sample = false,
       default_controls = { playback_mode = "one_shot", gate_release_ms = 10, envelope_enabled = false, legato_enabled = true, slide_retrigger = true, slide_crossfade_ms = 20,
-        fade_in = 0, fade_out = 0, volume = 0.354 },
+        envelope_mode = "ahd", envelope_layout_version = 2, hold = 0, fade_in = 0, fade_out = 0, volume = 0.354 },
     }, ids)
     pads[index] = pad
     lanes[index] = model.new_lane({
@@ -221,6 +221,22 @@ function M.load(host, project)
       controls.obey_note_offs=nil
     end
     rack.noteoff_policy_version=2
+  end
+  for _,pad in ipairs(rack.pads or {}) do
+    local controls=pad.default_controls or {};pad.default_controls=controls
+    -- Builds before the selectable envelope always implemented ADSR. Preserve
+    -- their sound; only newly created pads default to the drum-oriented AHD.
+    if controls.envelope_mode~="ahd" and controls.envelope_mode~="adsr" then controls.envelope_mode="adsr" end
+    if controls.envelope_layout_version~=2 then
+      if controls.envelope_mode=="ahd" and controls.ahd_decay==nil then controls.ahd_decay=controls.decay;controls.decay=nil end
+      controls.envelope_layout_version=2
+    end
+    controls.hold=math.max(0,math.min(1,tonumber(controls.hold) or 0))
+    if controls.filter_type~="lowpass" and controls.filter_type~="highpass" and controls.filter_type~="bandpass" then controls.filter_type="off" end
+    controls.filter_cutoff_hz=math.max(20,math.min(20000,tonumber(controls.filter_cutoff_hz) or 20000))
+    controls.filter_resonance=math.max(0,math.min(1,tonumber(controls.filter_resonance) or 0))
+    controls.drive=math.max(0,math.min(1,tonumber(controls.drive) or 0))
+    if controls.drive_character~="soft" then controls.drive_character="hard" end
   end
   for _,pattern in ipairs(rack.patterns or {}) do for _,variation in ipairs(pattern.variations or {}) do for _,lane in ipairs(variation.lanes or {}) do for _,step in ipairs(lane.steps or {}) do
     if step.accent==nil then

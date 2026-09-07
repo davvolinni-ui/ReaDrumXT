@@ -33,7 +33,7 @@ function M.compile(image)
  while pos<=#w do
   local tag,n=word(w,pos),word(w,pos+1);local f=pos+2
   if tag==snapshot.TAG.PATTERN then p.seed=word(w,f+1)
-  elseif tag==snapshot.TAG.PAD then p.pads[word(w,f)]={default_pan=n>=16 and word(w,f+15) or 0}
+  elseif tag==snapshot.TAG.PAD then p.pads[word(w,f)]={default_pan=n>=16 and word(w,f+15) or 0,filter_cutoff=n>=21 and word(w,f+18)/1000000 or 1,filter_resonance=n>=21 and word(w,f+19)/1000000 or 0,drive=n>=21 and word(w,f+20)/1000000 or 0}
   elseif tag==snapshot.TAG.LANE then
    lane={id=word(w,f),variation=word(w,f+1),pad=word(w,f+2),count=word(w,f+3),num=word(w,f+4),den=word(w,f+5),phase=word(w,f+6),swing=word(w,f+7),velocity_sensitivity=word(w,f+8) or 10000,groove_enabled=n<10 or word(w,f+9)==1,steps={}}
    p.lanes[#p.lanes+1]=lane;step_no=0
@@ -41,7 +41,7 @@ function M.compile(image)
    local count=word(w,f+3);local g={num=word(w,f+1),den=word(w,f+2),count=count,amount=word(w,f+4),offsets={}}
    for index=1,count do g.offsets[index]=word(w,f+4+index)end;p.grooves[word(w,f)]=g
   elseif tag==snapshot.TAG.STEP then
-   step_no=step_no+1;lane.steps[step_no]={enabled=word(w,f),velocity=word(w,f+1),pitch=word(w,f+2),pitch_cents=word(w,f+3),pan=word(w,f+4),repeats=word(w,f+5),repeat_num=word(w,f+6),repeat_den=word(w,f+7),prob=word(w,f+8),offset=word(w,f+9),gate=word(w,f+10),condition=word(w,f+11),a=word(w,f+12),b=word(w,f+13),slide=n>=16 and word(w,f+14)==1}
+   step_no=step_no+1;lane.steps[step_no]={enabled=word(w,f),velocity=word(w,f+1),pitch=word(w,f+2),pitch_cents=word(w,f+3),pan=word(w,f+4),repeats=word(w,f+5),repeat_num=word(w,f+6),repeat_den=word(w,f+7),prob=word(w,f+8),offset=word(w,f+9),gate=word(w,f+10),condition=word(w,f+11),a=word(w,f+12),b=word(w,f+13),slide=n>=16 and word(w,f+14)==1,filter_cutoff=n>=19 and word(w,f+16)/1000000 or -1,filter_resonance=n>=19 and word(w,f+17)/1000000 or -1,drive=n>=19 and word(w,f+18)/1000000 or -1}
   elseif tag==snapshot.TAG.END_ then break end
   pos=pos+2+n
  end
@@ -95,7 +95,7 @@ function M.trace(plan,first_qn,last_qn,opt)
   for k=low[li],high[li]do
    local ix=(k+l.phase)%l.count+1;local s=l.steps[ix];local q=clock_qn(plan,l,k)+s.offset/960
    if hit[li][k]then for r=0,s.repeats-1 do local on=q+r*4*s.repeat_num/s.repeat_den;local token=((k*#plan.lanes+(li-1))*64+r)+1;local gate=unit*s.gate/1000000;local off=on+gate;local pan=s.pan~=1001 and s.pan or (plan.pads[l.pad] and plan.pads[l.pad].default_pan or 0)
-   if on>=first_qn and on<last_qn then local sens=math.max(1,l.velocity_sensitivity/10000);local deficit=math.max(0,(127-s.velocity)/127);local shift=math.max(0,math.min(1,(sens-1)*deficit^1.5));out[#out+1]={kind="on",qn=on,lane=li,pad=l.pad,note=math.max(0,math.min(127,69+s.pitch)),pitch_cents=s.pitch_cents,velocity=s.velocity,pan=pan,transient_shift=shift,slide=s.slide,token=token,repeat_index=r}end
+   if on>=first_qn and on<last_qn then local sens=math.max(1,l.velocity_sensitivity/10000);local deficit=math.max(0,(127-s.velocity)/127);local shift=math.max(0,math.min(1,(sens-1)*deficit^1.5));local pad=plan.pads[l.pad]or{};out[#out+1]={kind="on",qn=on,lane=li,pad=l.pad,note=math.max(0,math.min(127,69+s.pitch)),pitch_cents=s.pitch_cents,velocity=s.velocity,pan=pan,transient_shift=shift,slide=s.slide,filter_cutoff=s.filter_cutoff>=0 and s.filter_cutoff or(pad.filter_cutoff or 1),filter_resonance=s.filter_resonance>=0 and s.filter_resonance or(pad.filter_resonance or 0),drive=s.drive>=0 and s.drive or(pad.drive or 0),token=token,repeat_index=r}end
      if s.enabled==1 and off>=first_qn and off<last_qn then out[#out+1]={kind="off",qn=off,lane=li,pad=l.pad,note=math.max(0,math.min(127,69+s.pitch)),token=token,repeat_index=r}end
    end end
   end

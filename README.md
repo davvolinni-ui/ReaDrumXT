@@ -1,6 +1,6 @@
 # ReaDrumXT
 
-ReaDrumXT is a drum sampler and polymetric step sequencer for REAPER on Windows.
+ReaDrumXT is a drum sampler and polymetric step sequencer for REAPER.
 It combines integrated sample editing, per-lane sequencing, MIDI groove
 support, velocity and timing tools, round-robin playback, multi-output routing,
 native REAPER track integration, and editable MIDI export.
@@ -29,8 +29,10 @@ files are user content and are not included with ReaDrumXT.
 
 ## Platform support
 
-ReaDrumXT currently supports Windows only. macOS and Linux are not supported or
-verified in this release.
+ReaDrumXT is intended for use with REAPER on Windows, macOS, and Linux.
+Platform testing is ongoing; the focused checks for 0.1.6 were run on Windows.
+If you encounter playback problems, use Settings > Support to create a
+diagnostic report and capture playback while the problem occurs.
 
 ## License and support
 

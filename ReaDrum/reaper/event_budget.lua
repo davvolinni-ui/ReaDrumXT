@@ -116,7 +116,7 @@ local function decode_active(image)
    local maximum=0;for index=1,count do local value=w[f+4+index];if not integer(value,-960,960)then return nil,"event budget: invalid GROOVE offset"end;maximum=math.max(maximum,math.abs(value))end
    grooves[variation]={maximum=maximum,amount=amount};last_step=false
   elseif tag==snapshot.TAG.STEP then
-   if n~=15 and n~=16 then return nil,"event budget: invalid STEP length"end;if not lane then return nil,"event budget: STEP before LANE"end;if seen>=expected then return nil,"event budget: too many STEP records"end
+   if n~=15 and n~=16 and n~=19 then return nil,"event budget: invalid STEP length"end;if not lane then return nil,"event budget: STEP before LANE"end;if seen>=expected then return nil,"event budget: too many STEP records"end
    local enabled,repeats,rn,rd,offset,gate=w[f],w[f+5],w[f+6],w[f+7],w[f+9],w[f+10]
    if not integer(enabled,0,3)or not integer(repeats,1,64)or not integer(rn,1,INT32_MAX)or not integer(rd,1,INT32_MAX)or not integer(offset,-960,960)or not integer(gate,0,16000000)then return nil,"event budget: invalid STEP budget field"end
    lane.steps[#lane.steps+1]={enabled=w[f],repeats=w[f+5],repeat_num=w[f+6],repeat_den=w[f+7],offset=w[f+9],gate=w[f+10]}
@@ -124,7 +124,7 @@ local function decode_active(image)
   elseif tag==snapshot.TAG.LOCK then
    if n~=4 then return nil,"event budget: invalid LOCK length"end;if not last_step then return nil,"event budget: LOCK before STEP"end
   elseif tag==snapshot.TAG.PAD then
-    if n~=15 and n~=16 and n~=17 and n~=18 then return nil,"event budget: invalid PAD length"end;if lane or have_variation or have_pattern then return nil,"event budget: PAD out of order"end
+    if n~=15 and n~=16 and n~=17 and n~=18 and n~=21 then return nil,"event budget: invalid PAD length"end;if lane or have_variation or have_pattern then return nil,"event budget: PAD out of order"end
    if not integer(w[f],1,128)or not integer(w[f+5],0,snapshot.MAX_LINKS)then return nil,"event budget: invalid PAD budget field"end;links[w[f]]=1+w[f+5];last_step=false
   elseif tag==snapshot.TAG.GROUP then
    if n~=24 then return nil,"event budget: invalid GROUP length"end;if lane or have_variation or have_pattern then return nil,"event budget: GROUP out of order"end

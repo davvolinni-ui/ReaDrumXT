@@ -262,6 +262,12 @@ local builtin_step_properties = {
     maximum = 100, default = 0, inheritance = "additive lane default", serialization = "integer" },
   { id = "pan_lock", label = "Pan Lock", value_type = "integer_or_false", unit = "percent", minimum = -100,
     maximum = 100, default = false, inheritance = "false inherits pad pan; integer is explicit", serialization = "boolean_or_integer" },
+  { id = "filter_cutoff_lock", label = "Filter Cutoff", value_type = "number_or_false", unit = "normalized", minimum = 0,
+    maximum = 1, default = false, inheritance = "false inherits pad cutoff; number is explicit", serialization = "boolean_or_number" },
+  { id = "filter_resonance_lock", label = "Filter Resonance", value_type = "number_or_false", unit = "normalized", minimum = 0,
+    maximum = 1, default = false, inheritance = "false inherits pad resonance; number is explicit", serialization = "boolean_or_number" },
+  { id = "drive_lock", label = "Drive", value_type = "number_or_false", unit = "normalized", minimum = 0,
+    maximum = 1, default = false, inheritance = "false inherits pad drive; number is explicit", serialization = "boolean_or_number" },
   { id = "repeat_count", label = "Repeats", value_type = "integer", unit = "hits", minimum = 1,
     maximum = 64, default = 1, inheritance = "lane default", serialization = "integer" },
   { id = "repeat_spacing", label = "Repeat Spacing", value_type = "rational", unit = "whole_note_fraction",
@@ -313,6 +319,9 @@ function M.new_step(opts)
     pitch_semitones = option(opts, "pitch_semitones", default_step_value("pitch_semitones")),
     pitch_cents = option(opts, "pitch_cents", default_step_value("pitch_cents")),
     pan_lock = option(opts, "pan_lock", default_step_value("pan_lock")),
+    filter_cutoff_lock = option(opts, "filter_cutoff_lock", default_step_value("filter_cutoff_lock")),
+    filter_resonance_lock = option(opts, "filter_resonance_lock", default_step_value("filter_resonance_lock")),
+    drive_lock = option(opts, "drive_lock", default_step_value("drive_lock")),
     repeat_count = option(opts, "repeat_count", default_step_value("repeat_count")),
     repeat_spacing = option(opts, "repeat_spacing", default_step_value("repeat_spacing")),
     probability = option(opts, "probability", default_step_value("probability")),
@@ -434,11 +443,19 @@ function M.new_pad(opts, id_factory)
   if default_controls.playback_mode == nil then default_controls.playback_mode = "one_shot" end
   if default_controls.gate_release_ms == nil then default_controls.gate_release_ms = 10 end
   if default_controls.envelope_enabled == nil then default_controls.envelope_enabled = false end
+  if default_controls.envelope_mode == nil then default_controls.envelope_mode = "ahd" end
+  if default_controls.hold == nil then default_controls.hold = 0 end
+  if default_controls.envelope_layout_version == nil then default_controls.envelope_layout_version = 2 end
   if default_controls.legato_enabled == nil then default_controls.legato_enabled = true end
   if default_controls.slide_retrigger == nil then default_controls.slide_retrigger = true end
   if default_controls.slide_crossfade_ms == nil then default_controls.slide_crossfade_ms = 20 end
   if default_controls.fade_in == nil then default_controls.fade_in = 0 end
   if default_controls.fade_out == nil then default_controls.fade_out = 0 end
+  if default_controls.filter_type == nil then default_controls.filter_type = "off" end
+  if default_controls.filter_cutoff_hz == nil then default_controls.filter_cutoff_hz = 20000 end
+  if default_controls.filter_resonance == nil then default_controls.filter_resonance = 0 end
+  if default_controls.drive == nil then default_controls.drive = 0 end
+  if default_controls.drive_character == nil then default_controls.drive_character = "hard" end
   return {
     type = "Pad",
     id = resolve_id("Pad", opts, id_factory),
@@ -624,6 +641,9 @@ local function validate_registered_property(value, path, definition)
   elseif definition.value_type == "integer_or_false" then
     if value == false then return true end
     return validate_number(value, path, definition.minimum, definition.maximum, true)
+  elseif definition.value_type == "number_or_false" then
+    if value == false then return true end
+    return validate_number(value, path, definition.minimum, definition.maximum, false)
   end
   return validate_serializable(value, path)
 end
@@ -665,17 +685,20 @@ function M.validate_step(step, path)
   if not slide_ok then return nil, slide_err end
 
   for _, property_id in ipairs(STEP_PROPERTY_ORDER) do
-    if step[property_id] == nil then
+    local value=step[property_id]
+    local optional=property_id=="filter_cutoff_lock" or property_id=="filter_resonance_lock" or property_id=="drive_lock"
+    if value==nil and optional then value=false end
+    if value == nil then
       return fail(path .. "." .. property_id, "missing complete Step property")
     end
     if property_id ~= "parameter_locks" then
       local validator = validators[property_id]
       local ok, err
       if validator then
-        ok, err = validator(step[property_id], path .. "." .. property_id)
+        ok, err = validator(value, path .. "." .. property_id)
       else
         ok, err = validate_registered_property(
-          step[property_id],
+          value,
           path .. "." .. property_id,
           STEP_PROPERTY_REGISTRY[property_id]
         )
