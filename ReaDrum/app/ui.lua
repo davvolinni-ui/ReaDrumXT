@@ -1110,21 +1110,6 @@ function UI:lane_button(label,width,height,accent,selected,accentuator_enabled)
   return hit,badge_active,accent_hit
 end
 
-function UI:pitch_context_menu()
-  local r,c,app=self.host,self.ctx,self.app
-  if r.ImGui_MenuItem(c,"Detect pitch") then app:detect_selected_pitch(false) end
-  if r.ImGui_MenuItem(c,"Detect and snap to C") then app:detect_selected_pitch(true) end
-  if r.ImGui_MenuItem(c,"Snap detected pitch to C") then app:snap_detected_pitch_to_c() end
-  if r.ImGui_MenuItem(c,"Revert pitch snap") then app:revert_pitch_snap() end
-  local controls=app:pad().default_controls or {}
-  local hz=tonumber(controls.detected_pitch_hz)
-  local confidence=tonumber(controls.pitch_confidence)
-  if hz and hz>0 then
-    r.ImGui_Separator(c)
-    r.ImGui_TextDisabled(c,string.format("Detected %.1f Hz%s",hz,confidence and string.format("  (%d%% confidence)",math.floor(confidence*100+.5)) or ""))
-  end
-end
-
 function UI:knob(id,label,value,default,size,options)
   local r,c=self.host,self.ctx
   options=options or {}
@@ -2848,8 +2833,10 @@ function UI:pads()
   -- The compact waveform is optional vertical content. Drop it completely
   -- before squeezing the pad grid, then let the grid and controls reflow using
   -- the full remaining panel height.
-  local show_quick_wave=avail_height>=430
-  local quick_wave_height=show_quick_wave and math.max(90,math.min(120,avail_height-330)) or 0
+  -- Preserve both control rows as height contracts. The waveform is the first
+  -- optional region to collapse, so sound-shaping knobs remain reachable.
+  local show_quick_wave=avail_height>=500
+  local quick_wave_height=show_quick_wave and math.max(90,math.min(120,avail_height-400)) or 0
   local top_height=avail_height-(show_quick_wave and quick_wave_height+8 or 0)
   local controls_reserve=66
   local layout_gap=3
@@ -2892,8 +2879,8 @@ function UI:pads()
   local pitch_label=pitch_mode=="tune" and "TUNE" or "TRANS"
   local pitch_value=pitch_mode=="tune" and cents or transpose
   local pitch_options=pitch_mode=="tune"
-    and {minimum=-100,maximum=100,wheel_step=1,label_color=C.text,label_clickable=true,on_shift_click=function()app:detect_selected_pitch()end,context_menu=function()self:pitch_context_menu()end,shift_hint="Detect pitch and snap to C",formatter=function(v)return string.format("%+.0f",v)end}
-    or {minimum=-48,maximum=48,wheel_step=1,label_color=C.playhead,label_clickable=true,on_shift_click=function()app:detect_selected_pitch()end,context_menu=function()self:pitch_context_menu()end,shift_hint="Detect pitch and snap to C",formatter=function(v)return string.format("%+.0f",v)end}
+    and {minimum=-100,maximum=100,wheel_step=1,label_color=C.text,label_clickable=true,on_shift_click=function()app:detect_selected_pitch(true)end,shift_hint="Detect pitch and snap to C",formatter=function(v)return string.format("%+.0f",v)end}
+    or {minimum=-48,maximum=48,wheel_step=1,label_color=C.playhead,label_clickable=true,on_shift_click=function()app:detect_selected_pitch(true)end,shift_hint="Detect pitch and snap to C",formatter=function(v)return string.format("%+.0f",v)end}
   local pitch_label_clicked
   r.ImGui_SameLine(c,0,6);changed,value,pitch_label_clicked=self:knob("##padquickpitch",pitch_label,pitch_value,0,compact_size,pitch_options)
   if changed then
@@ -2964,9 +2951,7 @@ function UI:pads()
       if did then group.advance_on_skip=next_value;app:mark_dirty(false) end
       did,next_value=r.ImGui_Checkbox(c,"Advance each repeat##quickrr",group.advance_each_repeat==true)
       if did then group.advance_each_repeat=next_value;app:mark_dirty(false) end
-      local master_index=app:pad_index_for_id(group.master_pad_id)
-      r.ImGui_TextDisabled(c,string.format("%d pads  |  Master: %s",#group.member_pad_ids,master_index and note_name(pad_midi_note(master_index)) or "?"))
-      if master_index~=app.selected_pad and r.ImGui_MenuItem(c,"Make Selected Pad Master") then app:set_round_robin_master(app.selected_pad) end
+      r.ImGui_TextDisabled(c,string.format("%d pads  |  Order follows pad grid",#group.member_pad_ids))
       if r.ImGui_MenuItem(c,"Remove Round Robin") then app:remove_round_robin() end
     else
       r.ImGui_TextDisabled(c,"No round robin assigned")
@@ -3025,9 +3010,9 @@ function UI:pads()
   -- row's existing reserve. Submit a zero-width item at that boundary so
   -- ReaImGui can account for it without adding visible padding.
   r.ImGui_Dummy(c,0,1)
+  local path=type(pad.sample)=="table" and pad.sample.path or pad.sample
   if show_quick_wave then
     r.ImGui_Separator(c)
-    local path=type(pad.sample)=="table" and pad.sample.path or pad.sample
     local changed,start_pos,end_pos,attack,hold,decay,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve=self:waveform(path,avail,quick_wave_height,controls.sample_start or DEFAULTS.sample_start,controls.sample_end or DEFAULTS.sample_end,"##quick_pad_waveform",controls)
     if changed then
       self:apply_selected_pad_control_edit(function(target_controls)
@@ -3035,6 +3020,7 @@ function UI:pads()
         if target_controls.envelope_mode=="adsr" then target_controls.decay=decay else target_controls.ahd_decay=decay end
      end,true)
     end
+  end
      r.ImGui_Separator(c)
      local playback_gap=3
      -- Reserve the complete knob row inside the scrollbar-adjusted content
@@ -3106,7 +3092,6 @@ function UI:pads()
       elseif item.id=="drive" and label_clicked then
         self:apply_selected_pad_controls({drive_character=controls.drive_character=="soft" and "hard" or "soft"},true)
       end
-    end
   end
 end
 
@@ -3511,7 +3496,7 @@ function UI:instrument_sampler(width,height)
       local value=controls[f[2]]; if value==nil then value=DEFAULTS[f[2]] end
       local knob_options
       if f[2]=="pitch" then
-        knob_options={minimum=0,maximum=1,on_shift_click=function()app:detect_selected_pitch()end,context_menu=function()self:pitch_context_menu()end,shift_hint="Detect pitch and snap to C"}
+        knob_options={minimum=0,maximum=1,on_shift_click=function()app:detect_selected_pitch(true)end,shift_hint="Detect pitch and snap to C"}
       end
       local changed,next_value=self:knob("##instrument_"..f[2],f[1],value,f[3],62,knob_options)
       if changed then controls[f[2]]=next_value; app:queue_pad_controls() end
@@ -3561,10 +3546,7 @@ function UI:instrument_sampler(width,height)
       if did then group.advance_on_skip=value;app:mark_dirty(false) end
       r.ImGui_SameLine(c);did,value=r.ImGui_Checkbox(c,"Per-repeat",group.advance_each_repeat==true)
       if did then group.advance_each_repeat=value;app:mark_dirty(false) end
-      local master_index=app:pad_index_for_id(group.master_pad_id)
-      r.ImGui_TextDisabled(c,string.format("%d members  |  Master %s",#group.member_pad_ids,master_index and (pad_bank_letter(master_index).." "..note_name(pad_midi_note(master_index))) or "?"))
-      if master_index~=app.selected_pad and self:button("Make Selected Master",148,25) then app:set_round_robin_master(app.selected_pad) end
-      r.ImGui_SameLine(c)
+      r.ImGui_TextDisabled(c,string.format("%d members  |  Pad-grid order",#group.member_pad_ids))
       if self:button("Remove Round Robin",136,25) then app:remove_round_robin() end
     end
   end
@@ -3646,10 +3628,11 @@ function UI:instrument_sampler_docked(width,height)
     end
     local transpose,cents=pad_pitch_values(controls)
     r.ImGui_SameLine(c)
-    local changed,value=self:knob("##docked_transpose","TRANSPOSE",transpose,0,50,{minimum=-48,maximum=48,wheel_step=1,formatter=function(v)return string.format("%+.0f",v)end})
+    local pitch_gesture={minimum=-48,maximum=48,wheel_step=1,on_shift_click=function()app:detect_selected_pitch(true)end,shift_hint="Detect pitch and snap to C",formatter=function(v)return string.format("%+.0f",v)end}
+    local changed,value=self:knob("##docked_transpose","TRANSPOSE",transpose,0,50,pitch_gesture)
     if changed then set_pad_pitch(controls,value,cents);transpose=value;app:queue_pad_controls() end
     r.ImGui_SameLine(c)
-    changed,value=self:knob("##docked_tune","TUNE",cents,0,50,{minimum=-100,maximum=100,wheel_step=1,formatter=function(v)return string.format("%+.0f",v)end})
+    changed,value=self:knob("##docked_tune","TUNE",cents,0,50,{minimum=-100,maximum=100,wheel_step=1,on_shift_click=function()app:detect_selected_pitch(true)end,shift_hint="Detect pitch and snap to C",formatter=function(v)return string.format("%+.0f",v)end})
     if changed then set_pad_pitch(controls,transpose,value);app:queue_pad_controls() end
     r.ImGui_EndGroup(c)
     r.ImGui_SameLine(c);r.ImGui_BeginGroup(c)
@@ -3694,9 +3677,15 @@ function UI:instrument_view(width,height)
   r.ImGui_SameLine(c)
   local editor_visible=self:begin_panel("##instrumentedit",editor_width,height,no_scroll_flags(r))
   if editor_visible then
-    local wave_height=math.max(112,math.min(185,height*.38))
-    self:instrument_wave_panel(0,wave_height)
-    self:instrument_sampler_docked(0,math.max(150,height-wave_height-5))
+    local sampler_reserve,wave_min,wave_gap=190,164,5
+    local wave_budget=height-sampler_reserve-wave_gap
+    if wave_budget>=wave_min then
+      local wave_height=math.min(185,wave_budget,math.max(wave_min,height*.38))
+      self:instrument_wave_panel(0,wave_height)
+      self:instrument_sampler_docked(0,height-wave_height-wave_gap)
+    else
+      self:instrument_sampler_docked(0,height)
+    end
   end
   self:end_panel(editor_visible)
   r.ImGui_SameLine(c)

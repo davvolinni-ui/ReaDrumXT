@@ -125,14 +125,15 @@ function capture_passthrough(off,m1,m2,m3) (
   midisend(off,m1,m2,m3);
 );
 ext_noinit=1;
-// This effect generates MIDI from transport while its audio input is silent.
-// Keep REAPER from pruning @block before it can schedule the pattern.
-ext_tail_size=-1;
+// This effect generates MIDI from transport and shared state even while its
+// audio input/output are silent. A nonzero ext_tail_size opts into REAPER's
+// silence auto-bypass, which would stop @block and bypass the MIDI mapping.
+ext_tail_size=0;
 ext_midi_bus=1;
 slider68=srate;
 MOD=2147483647;MUL=48271;PPM=1000000;HUGE=pow(10,100);SAFE_INT=9007199254740991;ROOT_NOTE=69;LIVE_BASE=36;AUDITION_KEY=4095;BUDGET_FUTURE=8192;BUDGET_BLOCK_CLOCKS=8192;BUDGET_BLOCK_ONS=4096;BUDGET_OFFS=8192;BUDGET_RECON=65536;MAX_BLOCK_SAMPLES=16384;cursor=0;direction=1;last_random=-1;rng=1;scheduler_rng=1;last_play=0;was_playing=0;last_reset=0;token_next=0;last_commit=-1;last_promote=-1;last_map_commit=-1;last_map_promote=-1;last_audition_request=-1;last_audition_release=-1;pending_words=0;pending_revision=0;active_words=0;active_budget_future=0;active_budget_block_ons=0;active_budget_retained=0;active_budget_block_qn_micro=0;map_pending_words=0;map_pending_revision=0;map_active_words=0;runtime_promote_latched=0;map_promote_latched=0;runtime_fault_latch=0;arrangement_gate=0;arrangement_gate_count=0;runtime_variation=1;pending_variation=0;pending_variation_q=0;last_variation_request=-1;LANES=700000;STEPS=710000;LANE_WORDS=12;STEP_WORDS=19;lane_count=0;OFFQ=4096;OFFQ_CAP=8192;OFFQ_WORDS=4;off_size=0;off_peak=0;ONQ=36864;ONQ_CAP=8192;ONQ_WORDS=10;on_size=0;on_peak=0;queue_seq=0;STAGE_OFF=1000000;STAGE_OFF_CAP=8192;STAGE_NOW=1032768;STAGE_NOW_CAP=12288;STAGE_FUTURE=1155648;STAGE_FUTURE_CAP=8192;SHADOW_LANES=1237568;SHADOW_LANE_WORDS=3;SHADOW_LANE_CAP=833;STAGE_EMIT=1240067;STAGE_EMIT_CAP=12288;stage_off_count=0;stage_now_size=0;stage_future_count=0;stage_emit_count=0;stage_owned_count=0;stage_seq=0;stage_fault=0;schedule_fault=0;memset(0,0,4096);
 MAX_GATE_PPM=16000000;
-HOT_LANES=900000;HOT_LANE_WORDS=3;BUDGET_LINKS=905000;VARS=1191000;VAR_WORDS=3;var_count=0;LANE_GROOVE=1269100;GROOVES=1270000;GROOVE_WORDS=260;
+HOT_LANES=900000;HOT_LANE_WORDS=7;BUDGET_LINKS=906000;VARS=1191000;VAR_WORDS=3;var_count=0;LANE_GROOVE=1269100;GROOVES=1270000;GROOVE_WORDS=260;
   PADMAP=1364000;PAD_WORDS=18;GROUPS=1367000;GROUP_WORDS=28;GROUP_CAP=32;PADGROUP=1368000;ACTIVESEQ=1368200;ACTIVENOTE=1368400;LEGATO=1368600;group_count=0;group_output_pad=0;group_output_pass=1;memset(ACTIVESEQ,0,128);memset(ACTIVENOTE,ROOT_NOTE,128);memset(LEGATO,0,128);
 INPUT_BEND=1269000;INPUT_PAN=1269020;INPUT_SLIDE=1269040;INPUT_SHIFT=1269060;INPUT_GLIDE=1269080;i=0;loop(16,INPUT_BEND[i]=8192;INPUT_PAN[i]=1001;INPUT_SLIDE[i]=0;INPUT_SHIFT[i]=0;INPUT_GLIDE[i]=-1;i+=1;);
 // Fixed regions are separated by their full worst-case capacities. Step and
@@ -191,9 +192,11 @@ function load_pending()local(base,n,i,c,v,pos,len,tag,ok,done)(base=slider31|0;n
 function reset_groups()local(i,b)(i=0;loop(group_count,b=i*GROUP_WORDS;GROUPS[b+24]=0;GROUPS[b+25]=1;GROUPS[b+26]=-1;GROUPS[b+27]=max(1,abs(GROUPS[b+4])%(MOD-1));i+=1;););
 function groove_shift(v,q,trim)local(b,count,num,den,unit,slot,amount)(b=(v-1)*GROOVE_WORDS;count=GROOVES[b]|0;count>0?(num=GROOVES[b+1];den=GROOVES[b+2];unit=4*num/den;slot=floor(q/unit+.5);amount=max(0,min(100000,GROOVES[b+3]+trim));abs(q-slot*unit)<0.00000001?GROOVES[b+4+(slot%count)]/960*amount/100000:0;):0;);
 function reset_schedule_history(clear_fault)local(i,b)(i=0;loop(lane_count,b=i*LANE_WORDS;LANES[b+9]=0;LANES[b+10]=0;i+=1;);on_size=0;on_peak=0;reset_groups();clear_fault?schedule_fault=0;);
-function build_scheduler()local(pos,tag,n,f,li,si,cur,step_cursor,p,g,j,b,vi,hot,old_lane_count,oi,ob,hb,matched)(
+function map_qn(t)local(i,n,p,q0,t0,q1,t1,result,found)(n=980000[10];result=-HUGE;found=0;t==980000[8]?result=980000[6]:t==980000[9]?result=980000[7]:(i=0;loop(n-1,!found?(p=12+i*2;q0=980000[p];t0=980000[p+1];q1=980000[p+2];t1=980000[p+3];t>=t0&&t<=t1?(result=q0+(t-t0)*(q1-q0)/(t1-t0);found=1;););i+=1;););result;);
+function build_scheduler()local(pos,tag,n,f,li,si,cur,step_cursor,p,g,j,b,vi,hot,old_lane_count,oi,ob,hb,matched,timing_changed,q,sp)(
   hot=(play_state&1)&&lane_count>0;old_lane_count=lane_count;
-  hot?(i=0;loop(old_lane_count,b=i*LANE_WORDS;hb=i*HOT_LANE_WORDS;HOT_LANES[hb]=LANES[b];HOT_LANES[hb+1]=LANES[b+9];HOT_LANES[hb+2]=LANES[b+10];i+=1;););
+  timing_changed=0;
+  hot?(i=0;loop(old_lane_count,b=i*LANE_WORDS;hb=i*HOT_LANE_WORDS;HOT_LANES[hb]=LANES[b];HOT_LANES[hb+1]=LANES[b+9];HOT_LANES[hb+2]=LANES[b+10];HOT_LANES[hb+3]=LANES[b+3];HOT_LANES[hb+4]=LANES[b+4];HOT_LANES[hb+5]=LANES[b+5];HOT_LANES[hb+6]=LANES[b+6];i+=1;););
   lane_count=0;group_count=0;var_count=0;pos=17;cur=-1;step_cursor=0;scheduler_rng=1;(!(play_state&1)||runtime_variation<1||runtime_variation>400000[9])?(runtime_variation=400000[6];pending_variation=0;);memset(PADMAP,0,128*PAD_WORDS);memset(PADGROUP,0,128);memset(LANE_GROOVE,0,SHADOW_LANE_CAP);memset(GROOVES,0,64*GROOVE_WORDS);
   while(pos<active_words)(
     tag=400000[pos-1];n=400000[pos];f=pos+1;
@@ -204,7 +207,7 @@ function build_scheduler()local(pos,tag,n,f,li,si,cur,step_cursor,p,g,j,b,vi,hot
     ):
     tag==3?(
       li=lane_count;lane_count+=1;b=li*LANE_WORDS;LANES[b]=400000[f];LANES[b+1]=400000[f+1];LANES[b+2]=400000[f+2];LANES[b+3]=400000[f+3];LANES[b+4]=400000[f+4];LANES[b+5]=400000[f+5];LANES[b+6]=400000[f+6];LANES[b+7]=400000[f+7];LANES[b+8]=step_cursor;LANES[b+9]=0;LANES[b+10]=0;LANES[b+11]=400000[f+8];LANE_GROOVE[li]=n>=10?400000[f+9]:1;
-      hot?(matched=0;oi=0;loop(old_lane_count,!matched?(hb=oi*HOT_LANE_WORDS;HOT_LANES[hb]==LANES[b]?(LANES[b+9]=HOT_LANES[hb+1];LANES[b+10]=HOT_LANES[hb+2];matched=1;););oi+=1;););
+      hot?(matched=0;oi=0;loop(old_lane_count,!matched?(hb=oi*HOT_LANE_WORDS;HOT_LANES[hb]==LANES[b]?(matched=1;(HOT_LANES[hb+3]==LANES[b+3]&&HOT_LANES[hb+4]==LANES[b+4]&&HOT_LANES[hb+5]==LANES[b+5]&&HOT_LANES[hb+6]==LANES[b+6])?(LANES[b+9]=HOT_LANES[hb+1];LANES[b+10]=HOT_LANES[hb+2];):timing_changed=1;););oi+=1;);!matched?timing_changed=1;);
       cur=li;si=0;
     ):
     tag==4&&cur>=0?(
@@ -214,7 +217,7 @@ function build_scheduler()local(pos,tag,n,f,li,si,cur,step_cursor,p,g,j,b,vi,hot
       p=(400000[f]-1)*PAD_WORDS;PADMAP[p]=400000[f+2];PADMAP[p+1]=400000[f+3];PADMAP[p+2]=400000[f+5];j=0;loop(4,PADMAP[p+3+j]=400000[f+6+j]-1;j+=1;);PADMAP[p+7]=400000[f+10];j=0;loop(4,PADMAP[p+8+j]=400000[f+11+j]-1;j+=1;);PADMAP[p+12]=n>=16?400000[f+15]:0;PADMAP[p+13]=n>=17?400000[f+16]:1;PADMAP[p+14]=n>=18?400000[f+17]:1;PADMAP[p+15]=n>=21?400000[f+18]:PPM;PADMAP[p+16]=n>=21?400000[f+19]:0;PADMAP[p+17]=n>=21?400000[f+20]:0;
     ):
     tag==7&&n==24&&group_count<GROUP_CAP?(
-      g=group_count;b=g*GROUP_WORDS;j=0;loop(24,GROUPS[b+j]=400000[f+j];j+=1;);GROUPS[b]-=1;j=0;loop(16,GROUPS[b+8+j]-=1;j+=1;);GROUPS[b+24]=0;GROUPS[b+25]=1;GROUPS[b+26]=-1;GROUPS[b+27]=max(1,abs(GROUPS[b+4])%(MOD-1));PADGROUP[GROUPS[b]]=g+1;group_count+=1;
+      g=group_count;b=g*GROUP_WORDS;j=0;loop(24,GROUPS[b+j]=400000[f+j];j+=1;);GROUPS[b]-=1;j=0;loop(16,GROUPS[b+8+j]-=1;j+=1;);GROUPS[b+24]=0;GROUPS[b+25]=1;GROUPS[b+26]=-1;GROUPS[b+27]=max(1,abs(GROUPS[b+4])%(MOD-1));j=0;loop(GROUPS[b+7],PADGROUP[GROUPS[b+8+j]]=g+1;j+=1;);group_count+=1;
     ):
     tag==255?(pos=active_words+1;);
     pos+=2+n;
@@ -223,7 +226,14 @@ function build_scheduler()local(pos,tag,n,f,li,si,cur,step_cursor,p,g,j,b,vi,hot
   // future queue during a hot edit as well as sounding-note off ownership;
   // clearing it while retaining the advanced clocks creates a one-QN dropout.
   // The edited snapshot naturally takes over as the look-ahead rolls forward.
-  hot?(schedule_fault=0;):(reset_schedule_history(1));
+  hot&&lane_count!=old_lane_count?timing_changed=1;
+  hot&&timing_changed?(
+    // A step cursor is meaningful only for the timing signature that produced
+    // it. Rebase every lane at the playhead when a hot edit changes division,
+    // length, or phase; otherwise the old cursor can move the next clock far
+    // into the future and silence that lane until the script is restarted.
+    reset_schedule_history(1);q=map_qn(play_position);q>-HUGE/2?(i=0;loop(lane_count,b=i*LANE_WORDS;sp=4*LANES[b+4]/LANES[b+5];LANES[b+9]=max(0,floor(q/sp)+1);i+=1;););
+  ):hot?(schedule_fault=0;):(reset_schedule_history(1));
 );
 function load_map()local(base,n,i,c,v,ok,p,q,t,pt,pq)(base=slider40|0;n=slider41|0;ok=slider38==52445&&slider39==1&&n>=16&&n<=20000&&pending_words>0&&gmem[base]==52445&&gmem[base+1]==1&&gmem[base+2]==n&&gmem[base+3]==slider42;ok?(c=1;i=5;loop(n-4,v=gmem[base+8+i];c=(c*48271+mapword(v))%MOD;i+=1;);ok=c==slider42;);ok?(gmem[base+8+5]!=pending_revision?(ok=0;):(p=13;pt=-HUGE;pq=-HUGE;loop(gmem[base+8+11],ok?(q=gmem[base+8+p];t=gmem[base+8+p+1];(!((q==q)&&(t==t))||q<=pq||t<=pt)?ok=0:(pq=q;pt=t;p+=2;);););););ok?(i=1;loop(n,950000[i-1]=gmem[base+8+i];i+=1;);map_pending_words=n;map_pending_revision=950000[4]|0;map_promote_latched=0;):(map_pending_words=0;map_pending_revision=0;map_promote_latched=0;);ok;);
 function budget_add(a,b)(a>=SAFE_INT-b?SAFE_INT:a+b;);
@@ -281,7 +291,6 @@ function budget_pending()local(ok,pos,tag,rec_len,f,cur,active,expected,seen,ste
  slider45=ok?1:-1;ok;
 );
 function try_promote_pair()local(i,rev,accepted)(pending_words>0&&map_pending_words>0&&runtime_promote_latched&&map_promote_latched&&pending_revision==map_pending_revision?(accepted=budget_pending();accepted?(rev=pending_revision;i=0;loop(pending_words,400000[i]=100000[i];i+=1;);i=0;loop(map_pending_words,980000[i]=950000[i];i+=1;);active_words=pending_words;map_active_words=map_pending_words;active_budget_future=slider46;active_budget_block_ons=slider48;active_budget_retained=slider49;active_budget_block_qn_micro=slider52;runtime_fault_latch=0;slider35=rev;slider36=0;pending_words=0;pending_revision=0;map_pending_words=0;map_pending_revision=0;runtime_promote_latched=0;map_promote_latched=0;build_scheduler();):(pending_words=0;pending_revision=0;map_pending_words=0;map_pending_revision=0;slider36=0;runtime_promote_latched=0;map_promote_latched=0;);););
-function map_qn(t)local(i,n,p,q0,t0,q1,t1,result,found)(n=980000[10];result=-HUGE;found=0;t==980000[8]?result=980000[6]:t==980000[9]?result=980000[7]:(i=0;loop(n-1,!found?(p=12+i*2;q0=980000[p];t0=980000[p+1];q1=980000[p+2];t1=980000[p+3];t>=t0&&t<=t1?(result=q0+(t-t0)*(q1-q0)/(t1-t0);found=1;););i+=1;););result;);
 function map_time(q)local(i,n,p,q0,t0,q1,t1,result,found)(n=980000[10];result=-HUGE;found=0;q==980000[6]?result=980000[8]:q==980000[7]?result=980000[9]:(i=0;loop(n-1,!found?(p=12+i*2;q0=980000[p];t0=980000[p+1];q1=980000[p+2];t1=980000[p+3];q>=q0&&q<=q1?(result=t0+(q-q0)*(t1-t0)/(q1-q0);found=1;););i+=1;););result;);
 function next_grid(q,unit,origin)local(x,b)(unit<=0?q:(x=(q-origin)/unit;b=origin+ceil(x-0.000000001)*unit;b<q-0.0000001?b+=unit;b;););
 function next_bar(q)local(n,p,i,mq,num,den,sq,nextq,b)(n=980000[11];p=12+980000[10]*2;mq=0;num=4;den=4;nextq=HUGE;i=0;loop(n,sq=980000[p+i*3];sq<=q+0.0000001?(mq=sq;num=980000[p+i*3+1];den=980000[p+i*3+2];):nextq==HUGE?nextq=sq;i+=1;);b=next_grid(q,num*4/den,mq);min(b,nextq););

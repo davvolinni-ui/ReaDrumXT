@@ -1,12 +1,12 @@
 -- @description ReaDrumXT - Drum Sampler and Polymetric Step Sequencer
--- @version 0.1.6
+-- @version 0.1.7
 -- @author davvolinni-ui
 -- @changelog
---   Fixed overlapping sampler control memory affecting startup pan, transient and legato state.
---   Improved runtime restoration, playback-mode recovery and sample-rate handling.
---   Extended sequencer transport-map coverage; corrected inherited Drive/filter handling.
---   Added on-demand diagnostics and a ten-second playback capture in Settings > Support.
---   Adjusted compact playback controls to keep the Drive knob on the same row.
+--   Fixed sequencer lanes falling silent after timing edits during playback.
+--   Fixed dispatcher processing being stopped by REAPER's silence auto-bypass.
+--   Made round-robin order deterministic from the pad grid and accepted triggers from every member.
+--   Added batch sample loading through the project bridge.
+--   Improved compact and docked pad-control layouts and pitch-detection gestures.
 -- @link
 --   Support https://forum.cockos.com/showthread.php?t=310870
 --   Repository https://github.com/davvolinni-ui/ReaDrumXT

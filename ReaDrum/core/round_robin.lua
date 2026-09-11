@@ -311,11 +311,10 @@ function Group:note_on(options)
   if options.kind ~= nil and options.kind ~= "group" then
     error("round-robin dispatch accepts group triggers only", 2)
   end
-  if options.source_pad_id ~= nil
-    and self.master_pad_id ~= nil
-    and options.source_pad_id ~= self.master_pad_id
-  then
-    error("group trigger source does not match master_pad_id", 2)
+  if options.source_pad_id ~= nil then
+    local member = false
+    for _, id in ipairs(self.members) do if id == options.source_pad_id then member = true; break end end
+    if not member then error("group trigger source must be a group member", 2) end
   end
   if options.token ~= nil and self.active[options.token] ~= nil then
     error("group trigger token is already active", 2)

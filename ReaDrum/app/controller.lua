@@ -1674,17 +1674,6 @@ function Controller:round_robin_for_pad(index)
   end
 end
 
-function Controller:pad_index_for_id(id)
-  for index,pad in ipairs(self.rack.pads) do if pad.id==id then return index end end
-end
-
-function Controller:set_round_robin_master(index)
-  local group=self:round_robin_for_pad(index or self.selected_pad)
-  if not group then self.status="Selected pad is not in a round robin group";return end
-  group.master_pad_id=self:pad(index or self.selected_pad).id;self:mark_dirty(false)
-  self.status="Round robin master set to "..(self:pad(index or self.selected_pad).name or ("Pad "..tostring(index or self.selected_pad)))
-end
-
 function Controller:make_round_robin(indices)
   local members, seen = {}, {}
   local member_indices={}
@@ -1696,7 +1685,9 @@ function Controller:make_round_robin(indices)
   end
   if indices and #indices>0 then for _,index in ipairs(indices) do add(index) end else add(self.selected_pad) end
   if #members < 2 then self.status = "Select at least two loaded pads for round robin"; return false end
-  local master_index=seen[self.selected_pad] and self.selected_pad or member_indices[1]
+  table.sort(member_indices)
+  members={};for _,index in ipairs(member_indices) do members[#members+1]=self:pad(index).id end
+  local master_index=member_indices[1]
   local remove = {}; for index in ipairs(self.rack.round_robin_groups) do remove[index]=false end
   for index, group in ipairs(self.rack.round_robin_groups) do
     for _, member in ipairs(group.member_pad_ids) do for _, wanted in ipairs(members) do if member==wanted then remove[index]=true end end end
@@ -2230,7 +2221,12 @@ function Controller:poll_bridge()
   local command;command,self.bridge_id=bridge.poll(self.host,self.project,self.bridge_id);if not command then return end
   local index=command.pad or self.selected_pad
   if command.command=="load_next_empty"then for i=1,#self.rack.pads do if self:pad(i).sample==false then index=i;break end end end
-  local accepted=(command.command=="load_selected"or command.command=="load_pad"or command.command=="load_next_empty")and self:load_sample_path(index,command.path)
+  local accepted
+  if command.command=="load_batch" then
+    accepted=#command.paths>0 and self:load_sample_paths(index,command.paths)
+  else
+    accepted=(command.command=="load_selected"or command.command=="load_pad"or command.command=="load_next_empty")and self:load_sample_path(index,command.path)
+  end
   bridge.ack(self.host,self.project,command.id,accepted and"ok"or"rejected")
 end
 
