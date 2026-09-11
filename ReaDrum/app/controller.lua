@@ -19,6 +19,10 @@ local bridge = require("ReaDrum.app.bridge")
 local Controller = {}
 Controller.__index = Controller
 local clipper_reloaded=setmetatable({},{__mode="k"})
+-- All project tabs are served by controllers in this module instance. Keep
+-- the newest ReaDrum clipboard envelope here so switching tabs cannot expose
+-- an older, same-scope clipboard cached by the destination controller.
+local shared_clipboard_envelope,shared_clipboard_json
 
 local function engine_namespace(host,project)
   local text=host.GetProjectGUID and host.GetProjectGUID(project) or tostring(project or 0)
@@ -140,7 +144,12 @@ function Controller:sync_transport_timing(now)
   if key==self.last_transport_timing_key then return true end
   self.transport_cache=nil
   self.last_transport_timing_key=key
-  self:publish_transient_runtime("Tempo synchronized",true)
+  local published=self:publish_transient_runtime("Tempo synchronized",true)
+  -- A tempo edit changes the absolute-QN value at the current project time.
+  -- The replacement map is correct, but lane cursors and the one-QN lookahead
+  -- queue were built in the old mapping. Rebase them at the playhead so a
+  -- slower tempo cannot leave the pattern one beat (or more) ahead.
+  if published then self:reset_dispatcher_schedule() end
   return false
 end
 
@@ -224,7 +233,10 @@ function Controller:verify_runtime_rate(now)
   if rate<=0 or now<(self.next_runtime_repair or 0) then return false end
   self.runtime_repair_attempts=math.min(6,(self.runtime_repair_attempts or 0)+1)
   self.next_runtime_repair=now+math.min(8,.25*2^(self.runtime_repair_attempts-1))
-  self:publish_transient_runtime(nil,true)
+  local published=self:publish_transient_runtime(nil,true)
+  -- This slower recovery path can be the first observer of a tempo edit when
+  -- the UI watcher was delayed by a modal window or a long frame.
+  if published and not transport_matches then self:reset_dispatcher_schedule() end
   return false -- publication is not an audio-thread acknowledgement
 end
 
@@ -240,11 +252,12 @@ function Controller:step() return self:lane().steps[self.selected_step] end
 function Controller:set_clipboard_envelope(envelope)
   clipboard.assert_valid_envelope(envelope);self.clipboard_envelope=envelope
   local raw=json.encode(envelope);self.clipboard_json=raw
+  shared_clipboard_envelope,shared_clipboard_json=envelope,raw
   if self.host.CF_SetClipboard then pcall(self.host.CF_SetClipboard,raw) end
 end
 
 function Controller:get_clipboard_envelope(scope)
-  local envelope=self.clipboard_envelope
+  local envelope=shared_clipboard_envelope or self.clipboard_envelope
   -- The local envelope is already validated and is the common same-instance
   -- path. Reading and decoding the Windows clipboard here caused a visible UI
   -- stall on every paste. Only consult it for a cross-instance/project paste.
@@ -252,10 +265,14 @@ function Controller:get_clipboard_envelope(scope)
     local ok,raw=pcall(self.host.CF_GetClipboard)
     if ok and type(raw)=="string" and raw:find('"format":"readrum%-clipboard"') then
       local decoded_ok,decoded=pcall(json.decode,raw)
-      if decoded_ok and clipboard.validate_envelope(decoded) then envelope=decoded;self.clipboard_envelope=decoded end
+      if decoded_ok and clipboard.validate_envelope(decoded) then
+        envelope=decoded;self.clipboard_envelope=decoded
+        shared_clipboard_envelope,shared_clipboard_json=decoded,raw
+      end
     end
   end
   if not envelope or (scope and envelope.scope~=scope) then return nil end
+  self.clipboard_envelope=envelope;self.clipboard_json=shared_clipboard_json or self.clipboard_json
   return envelope
 end
 

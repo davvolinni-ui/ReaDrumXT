@@ -1,11 +1,9 @@
 -- @description ReaDrumXT - Drum Sampler and Polymetric Step Sequencer
--- @version 0.1.8
+-- @version 0.1.9
 -- @author davvolinni-ui
 -- @changelog
---   Fixed random round-robin ordering at 0% and 100% group probability.
---   Fixed sequencer timing after live REAPER tempo changes.
---   Fixed high-tempo transport-map updates for large audio blocks.
---   Fixed mouse-wheel transpose and fine-tune controls becoming trapped below zero.
+--   Rebased the sequencer scheduler after live REAPER tempo changes.
+--   Preserved copied patterns and variations when switching project tabs.
 -- @link
 --   Support https://forum.cockos.com/showthread.php?t=310870
 --   Repository https://github.com/davvolinni-ui/ReaDrumXT
