@@ -95,12 +95,53 @@ local function time_signatures(host, project, qn_end)
 end
 
 local function transport_key(host,project,project_end,qn_end,rate)
-  local parts={string.format("%.6f",project_end),tostring(qn_end),tostring(rate)}
+  -- CountTempoTimeSigMarkers excludes the project's base tempo. Sampling QN 0
+  -- and 1 keeps ordinary BPM changes in the cache key even when the tempo
+  -- envelope contains no explicit markers.
+  local qn0_time=host.TimeMap2_QNToTime(project,0)
+  local qn1_time=host.TimeMap2_QNToTime(project,1)
+  local base_tempo=host.Master_GetTempo and host.Master_GetTempo() or 0
+  local parts={string.format("%.6f",project_end),tostring(qn_end),tostring(rate),string.format("%.9f",base_tempo or 0),string.format("%.9f",qn0_time or 0),string.format("%.9f",qn1_time or 0)}
   for index=0,host.CountTempoTimeSigMarkers(project)-1 do
     local ok,time,measure,beat,bpm,num,den,linear=host.GetTempoTimeSigMarker(project,index)
     if ok then parts[#parts+1]=table.concat({string.format("%.9f",time or 0),tostring(measure or 0),string.format("%.9f",beat or 0),string.format("%.9f",bpm or 0),tostring(num or 0),tostring(den or 0),linear and "1" or "0"},":") end
   end
   return table.concat(parts,"|")
+end
+
+function Controller:current_transport_key(rate)
+  local host=self.host
+  if not(host.GetProjectLength and host.TimeMap2_timeToQN and host.TimeMap2_QNToTime and host.CountTempoTimeSigMarkers and host.GetTempoTimeSigMarker)then return nil end
+  local project_length=math.max(0,host.GetProjectLength(self.project))
+  local project_end=host.TimeMap2_timeToQN(self.project,project_length)
+  local qn_end=transport.coverage_end(project_end)
+  return transport_key(host,self.project,project_length,qn_end,rate)
+end
+
+function Controller:transport_timing_key()
+  local host=self.host
+  if not(host.TimeMap2_QNToTime and host.CountTempoTimeSigMarkers and host.GetTempoTimeSigMarker)then return nil end
+  local parts={string.format("%.9f",host.Master_GetTempo and host.Master_GetTempo() or 0),string.format("%.9f",host.TimeMap2_QNToTime(self.project,0)or 0),string.format("%.9f",host.TimeMap2_QNToTime(self.project,1)or 0)}
+  for index=0,host.CountTempoTimeSigMarkers(self.project)-1 do
+    local ok,time,measure,beat,bpm,num,den,linear=host.GetTempoTimeSigMarker(self.project,index)
+    if ok then parts[#parts+1]=table.concat({string.format("%.9f",time or 0),tostring(measure or 0),string.format("%.9f",beat or 0),string.format("%.9f",bpm or 0),tostring(num or 0),tostring(den or 0),linear and"1"or"0"},":")end
+  end
+  return table.concat(parts,"|")
+end
+
+function Controller:sync_transport_timing(now)
+  if self.startup_sync then return true end
+  now=now or self.host.time_precise()
+  if now<(self.next_timing_check or 0)then return true end
+  self.next_timing_check=now+.05
+  local key=self:transport_timing_key()
+  if key==nil then return true end
+  if self.last_transport_timing_key==nil then self.last_transport_timing_key=key;return true end
+  if key==self.last_transport_timing_key then return true end
+  self.transport_cache=nil
+  self.last_transport_timing_key=key
+  self:publish_transient_runtime("Tempo synchronized",true)
+  return false
 end
 
 function Controller.new(host, project)
@@ -171,7 +212,9 @@ function Controller:verify_runtime_rate(now)
   local active=math.floor((self.host.TrackFX_GetParam(track,fx,34)or 0)+.5)
   local map_words=math.floor((self.host.TrackFX_GetParam(track,fx,80)or 0)+.5)
   local rate_matches=rate>0 and rate==self.last_published_rate
-  if rate_matches and active==self.revision and map_words>0 and actual_mode==expected_mode and maps_live_midi>=.5 then
+  local current_transport_key=self:current_transport_key(rate)
+  local transport_matches=current_transport_key==nil or current_transport_key==self.last_published_transport_key
+  if rate_matches and transport_matches and active==self.revision and map_words>0 and actual_mode==expected_mode and maps_live_midi>=.5 then
     self.runtime_repair_attempts=0;self.next_runtime_repair=nil
     return true
   end
@@ -655,6 +698,8 @@ function Controller:build_publish_payload(yield_hook)
   local rate = audio_rate(self.host, self.project, track, fx)
   self.last_published_rate=rate
   local map_key=transport_key(self.host,self.project,math.max(0,self.host.GetProjectLength(self.project)),qn_end,rate)
+  self.last_published_transport_key=map_key
+  self.last_transport_timing_key=self:transport_timing_key()
   local map_model
   if self.transport_cache and self.transport_cache.key==map_key then
     map_model=self.transport_cache.map

@@ -6,7 +6,7 @@ local M={}
 
 M.LIMITS={
  future_ons=8192,
- block_qn=1,
+ block_qn=64,
  block_clock_evaluations=8192,
  block_note_ons=4096,
  off_slots=8192,

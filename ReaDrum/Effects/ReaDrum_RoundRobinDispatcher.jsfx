@@ -52,7 +52,7 @@ slider48:0<0,9007199254740991,1>-budget required block ons
 slider49:0<0,9007199254740991,1>-budget required retained offs
 slider50:0<0,9007199254740991,1>-budget required off slots
 slider51:0<0,9007199254740991,1>-budget required reconstruction clocks
-slider52:0<0,1000000,1>-budget block QN micro
+slider52:0<0,64000000,1>-budget block QN micro
 slider53:0<0,7,1>-budget rejection code
 slider54:0<0,3,1>-runtime guard code
 slider55:0<0,8192,1>-future queue current
@@ -250,7 +250,7 @@ function budget_pending()local(ok,pos,tag,rec_len,f,cur,active,expected,seen,ste
  // Runtime discontinuity recovery backs up by one audio block, not by the
  // transport map's complete QN horizon.  Using qn_end here rejected dense
  // 128-lane snapshots while silently retaining the preceding revision.
- ok?(block_qn=0;i=0;loop(950000[10]-1,p=12+i*2;q0=950000[p];t0=950000[p+1];q1=950000[p+2];t1=950000[p+3];span=(q1-q0)/(t1-t0)*MAX_BLOCK_SAMPLES/srate;span>block_qn?block_qn=span;i+=1;);block_qn=ceil(block_qn*1000000)/1000000;slider52=block_qn*1000000;recon_qn=block_qn;block_qn>1?(ok=0;slider53=1;););
+ ok?(block_qn=0;i=0;loop(950000[10]-1,p=12+i*2;q0=950000[p];t0=950000[p+1];q1=950000[p+2];t1=950000[p+3];span=(q1-q0)/(t1-t0)*MAX_BLOCK_SAMPLES/srate;span>block_qn?block_qn=span;i+=1;);block_qn=ceil(block_qn*1000000)/1000000;slider52=block_qn*1000000;recon_qn=block_qn;block_qn>64?(ok=0;slider53=1;););
  pos=17;cur=0;active=0;expected=0;seen=0;ended=0;
  loop(pending_words-16,
   ok&&!ended?(
@@ -326,7 +326,7 @@ function step_pass_shadow(li,base,k)local(c,a,b,prior,j)(c=STEPS[base+10];a=STEP
 function group_pick(pad)local(slot,b,n,mode,x,d,pass,advance,i,candidate,found)(
   group_output_pad=pad;group_output_pass=1;slot=PADGROUP[pad]|0;
   slot>0?(
-    b=(slot-1)*GROUP_WORDS;n=GROUPS[b+7]|0;GROUPS[b+27]=(GROUPS[b+27]*MUL)%MOD;pass=GROUPS[b+2]>=PPM||(GROUPS[b+2]>0&&((GROUPS[b+27]-1)%PPM)<GROUPS[b+2]);advance=pass||GROUPS[b+5];
+    b=(slot-1)*GROUP_WORDS;n=GROUPS[b+7]|0;pass=GROUPS[b+2]>=PPM;GROUPS[b+2]>0&&GROUPS[b+2]<PPM?(GROUPS[b+27]=(GROUPS[b+27]*MUL)%MOD;pass=((GROUPS[b+27]-1)%PPM)<GROUPS[b+2];);advance=pass||GROUPS[b+5];
     advance?(
       mode=GROUPS[b+1]|0;
       mode==0?(x=GROUPS[b+24]|0;GROUPS[b+24]=(x+1)%n;):
@@ -485,7 +485,7 @@ serialize_reading=file_avail(0)>=0;
 serialize_reading?(
   slider69=1;
   ser_magic=ser_read_value();ser_version=ser_read_value();ser_state=ser_read_value();ser_revision=ser_read_value();ser_runtime_words=ser_read_value();ser_map_words=ser_read_value();ser_budget_future=ser_read_value();ser_budget_block_ons=ser_read_value();ser_budget_retained=ser_read_value();ser_budget_qn_micro=ser_read_value();ser_checksum=ser_read_value();
-  ser_ok=ser_magic==SER_MAGIC&&ser_version==SER_VERSION&&ser_int(ser_state,0,1)&&ser_int(ser_revision,0,16777215)&&ser_int(ser_runtime_words,0,SER_RUNTIME_CAP)&&ser_int(ser_map_words,0,SER_MAP_CAP)&&ser_int(ser_budget_future,0,BUDGET_FUTURE)&&ser_int(ser_budget_block_ons,0,BUDGET_BLOCK_ONS)&&ser_int(ser_budget_retained,0,BUDGET_OFFS)&&ser_int(ser_budget_qn_micro,0,1000000)&&ser_checksum==ser_meta_checksum();
+  ser_ok=ser_magic==SER_MAGIC&&ser_version==SER_VERSION&&ser_int(ser_state,0,1)&&ser_int(ser_revision,0,16777215)&&ser_int(ser_runtime_words,0,SER_RUNTIME_CAP)&&ser_int(ser_map_words,0,SER_MAP_CAP)&&ser_int(ser_budget_future,0,BUDGET_FUTURE)&&ser_int(ser_budget_block_ons,0,BUDGET_BLOCK_ONS)&&ser_int(ser_budget_retained,0,BUDGET_OFFS)&&ser_int(ser_budget_qn_micro,0,64000000)&&ser_checksum==ser_meta_checksum();
   ser_ok?(slider69=2;);
   ser_ok&&ser_state?(ser_ok=ser_runtime_words>=18&&ser_map_words>=16;ser_ok?(i=0;loop(ser_runtime_words,SER_RUNTIME[i]=ser_read_value();i+=1;);i=0;loop(ser_map_words,SER_MAP[i]=ser_read_value();i+=1;););):ser_ok?(ser_ok=ser_revision==0&&ser_runtime_words==0&&ser_map_words==0&&ser_budget_future==0&&ser_budget_block_ons==0&&ser_budget_retained==0&&ser_budget_qn_micro==0;);
   ser_trailer=ser_read_value();ser_ok=ser_ok&&ser_trailer==SER_TRAILER&&file_avail(0)==0;
@@ -493,7 +493,7 @@ serialize_reading?(
   ser_ok&&ser_state?(ser_ok=ser_runtime_valid(SER_RUNTIME,ser_runtime_words,ser_revision)&&ser_map_valid(SER_MAP,ser_map_words,ser_revision);ser_ok?(slider69=4;ser_ok=ser_activate();ser_ok?(slider69=5;););):ser_ok?(ser_clear_active();slider69=5;);
   !ser_ok?(ser_clear_active();slider45=-1;slider53=7;);
 ):(
-  ser_state=active_words>0&&map_active_words>0&&ser_int(active_budget_future,0,BUDGET_FUTURE)&&ser_int(active_budget_block_ons,0,BUDGET_BLOCK_ONS)&&ser_int(active_budget_retained,0,BUDGET_OFFS)&&ser_int(active_budget_block_qn_micro,0,1000000)&&ser_runtime_valid(400000,active_words,slider35)&&ser_map_valid(980000,map_active_words,slider35);
+  ser_state=active_words>0&&map_active_words>0&&ser_int(active_budget_future,0,BUDGET_FUTURE)&&ser_int(active_budget_block_ons,0,BUDGET_BLOCK_ONS)&&ser_int(active_budget_retained,0,BUDGET_OFFS)&&ser_int(active_budget_block_qn_micro,0,64000000)&&ser_runtime_valid(400000,active_words,slider35)&&ser_map_valid(980000,map_active_words,slider35);
   ser_magic=SER_MAGIC;ser_version=SER_VERSION;ser_revision=ser_state?slider35:0;ser_runtime_words=ser_state?active_words:0;ser_map_words=ser_state?map_active_words:0;ser_budget_future=ser_state?active_budget_future:0;ser_budget_block_ons=ser_state?active_budget_block_ons:0;ser_budget_retained=ser_state?active_budget_retained:0;ser_budget_qn_micro=ser_state?active_budget_block_qn_micro:0;ser_checksum=ser_meta_checksum();ser_trailer=SER_TRAILER;
   ser_write_value(ser_magic);ser_write_value(ser_version);ser_write_value(ser_state);ser_write_value(ser_revision);ser_write_value(ser_runtime_words);ser_write_value(ser_map_words);ser_write_value(ser_budget_future);ser_write_value(ser_budget_block_ons);ser_write_value(ser_budget_retained);ser_write_value(ser_budget_qn_micro);ser_write_value(ser_checksum);
   ser_state?(i=0;loop(ser_runtime_words,ser_write_value(400000[i]);i+=1;);i=0;loop(ser_map_words,ser_write_value(980000[i]);i+=1;););ser_write_value(ser_trailer);

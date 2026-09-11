@@ -67,18 +67,20 @@ local function envelope_value_text(key,value)
   return envelope.format_time(envelope.time_seconds(value,assert(ENVELOPE_TIME_MAX[key],"unknown envelope time")))
 end
 
+local function round_signed(value)return value>=0 and math.floor(value+.5)or math.ceil(value-.5)end
+
 local function pad_pitch_values(controls)
   if controls.transpose_semitones~=nil or controls.tune_cents~=nil then
     return math.max(-48,math.min(48,controls.transpose_semitones or 0)),math.max(-100,math.min(100,controls.tune_cents or 0))
   end
   local total=((controls.pitch or DEFAULTS.pitch)-.5)*160
-  local transpose=math.max(-48,math.min(48,math.floor(total+(total>=0 and .5 or -.5))))
+  local transpose=math.max(-48,math.min(48,round_signed(total)))
   return transpose,math.max(-100,math.min(100,math.floor((total-transpose)*100+.5)))
 end
 
 local function set_pad_pitch(controls,transpose,cents)
-  controls.transpose_semitones=math.max(-48,math.min(48,math.floor(transpose+(transpose>=0 and .5 or -.5))))
-  controls.tune_cents=math.max(-100,math.min(100,math.floor(cents+(cents>=0 and .5 or -.5))))
+  controls.transpose_semitones=math.max(-48,math.min(48,round_signed(transpose)))
+  controls.tune_cents=math.max(-100,math.min(100,round_signed(cents)))
   controls.pitch=math.max(0,math.min(1,.5+(controls.transpose_semitones+controls.tune_cents/100)/160))
 end
 
@@ -2612,7 +2614,7 @@ function UI:waveform(path,width,height,start_pos,end_pos,id,envelope)
     transpose=tonumber(envelope.transpose_semitones) or 0;cents=tonumber(envelope.tune_cents) or 0
   else
     local total=((tonumber(envelope.pitch) or DEFAULTS.pitch)-.5)*160
-    transpose=math.floor(total+(total>=0 and .5 or -.5));cents=(total-transpose)*100
+    transpose=round_signed(total);cents=(total-transpose)*100
   end
   local playback_rate=math.max(.000001,2^((transpose+cents/100)/12))
   local attack_seconds=envelope_math.time_seconds(attack,envelope_math.ATTACK_MAX_SECONDS)
@@ -4358,7 +4360,8 @@ function UI:frame()
   if now>=(self.next_project_poll or 0) then
     self.next_project_poll=now+.05
     self.app:verify_startup_sync(now)
-    self.app:verify_runtime_rate(now)
+    local timing_current=self.app:sync_transport_timing(now)
+    if timing_current then self.app:verify_runtime_rate(now) end
     self.app:sync_engine_variation()
     self.app:follow_engine_variation_display()
     if self.app.follow_variation_events then self.app:poll_variation_event_selection(false) end

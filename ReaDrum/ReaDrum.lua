@@ -1,12 +1,11 @@
 -- @description ReaDrumXT - Drum Sampler and Polymetric Step Sequencer
--- @version 0.1.7
+-- @version 0.1.8
 -- @author davvolinni-ui
 -- @changelog
---   Fixed sequencer lanes falling silent after timing edits during playback.
---   Fixed dispatcher processing being stopped by REAPER's silence auto-bypass.
---   Made round-robin order deterministic from the pad grid and accepted triggers from every member.
---   Added batch sample loading through the project bridge.
---   Improved compact and docked pad-control layouts and pitch-detection gestures.
+--   Fixed random round-robin ordering at 0% and 100% group probability.
+--   Fixed sequencer timing after live REAPER tempo changes.
+--   Fixed high-tempo transport-map updates for large audio blocks.
+--   Fixed mouse-wheel transpose and fine-tune controls becoming trapped below zero.
 -- @link
 --   Support https://forum.cockos.com/showthread.php?t=310870
 --   Repository https://github.com/davvolinni-ui/ReaDrumXT
