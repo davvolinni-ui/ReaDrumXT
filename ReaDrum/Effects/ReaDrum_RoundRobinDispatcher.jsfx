@@ -131,16 +131,16 @@ ext_noinit=1;
 ext_tail_size=0;
 ext_midi_bus=1;
 slider68=srate;
-MOD=2147483647;MUL=48271;PPM=1000000;HUGE=pow(10,100);SAFE_INT=9007199254740991;ROOT_NOTE=69;LIVE_BASE=36;AUDITION_KEY=4095;BUDGET_FUTURE=8192;BUDGET_BLOCK_CLOCKS=8192;BUDGET_BLOCK_ONS=4096;BUDGET_OFFS=8192;BUDGET_RECON=65536;MAX_BLOCK_SAMPLES=16384;cursor=0;direction=1;last_random=-1;rng=1;scheduler_rng=1;last_play=0;was_playing=0;last_reset=0;token_next=0;last_commit=-1;last_promote=-1;last_map_commit=-1;last_map_promote=-1;last_audition_request=-1;last_audition_release=-1;pending_words=0;pending_revision=0;active_words=0;active_budget_future=0;active_budget_block_ons=0;active_budget_retained=0;active_budget_block_qn_micro=0;map_pending_words=0;map_pending_revision=0;map_active_words=0;runtime_promote_latched=0;map_promote_latched=0;runtime_fault_latch=0;arrangement_gate=0;arrangement_gate_count=0;runtime_variation=1;pending_variation=0;pending_variation_q=0;last_variation_request=-1;LANES=700000;STEPS=710000;LANE_WORDS=12;STEP_WORDS=19;lane_count=0;OFFQ=4096;OFFQ_CAP=8192;OFFQ_WORDS=4;off_size=0;off_peak=0;ONQ=36864;ONQ_CAP=8192;ONQ_WORDS=10;on_size=0;on_peak=0;queue_seq=0;STAGE_OFF=1000000;STAGE_OFF_CAP=8192;STAGE_NOW=1032768;STAGE_NOW_CAP=12288;STAGE_FUTURE=1155648;STAGE_FUTURE_CAP=8192;SHADOW_LANES=1237568;SHADOW_LANE_WORDS=3;SHADOW_LANE_CAP=833;STAGE_EMIT=1240067;STAGE_EMIT_CAP=12288;stage_off_count=0;stage_now_size=0;stage_future_count=0;stage_emit_count=0;stage_owned_count=0;stage_seq=0;stage_fault=0;schedule_fault=0;memset(0,0,4096);
+MOD=2147483647;MUL=48271;PPM=1000000;HUGE=pow(10,100);SAFE_INT=9007199254740991;ROOT_NOTE=69;LIVE_BASE=36;AUDITION_KEY=4095;BUDGET_FUTURE=8192;BUDGET_BLOCK_CLOCKS=8192;BUDGET_BLOCK_ONS=4096;BUDGET_OFFS=8192;BUDGET_RECON=65536;MAX_BLOCK_SAMPLES=16384;cursor=0;direction=1;last_random=-1;rng=1;scheduler_rng=1;last_play=0;was_playing=0;native_clock_valid=0;last_native_q1=0;last_reset=0;token_next=0;last_commit=-1;last_promote=-1;last_map_commit=-1;last_map_promote=-1;last_audition_request=-1;last_audition_release=-1;pending_words=0;pending_revision=0;active_words=0;active_budget_future=0;active_budget_block_ons=0;active_budget_retained=0;active_budget_block_qn_micro=0;map_pending_words=0;map_pending_revision=0;map_active_words=0;runtime_promote_latched=0;map_promote_latched=0;runtime_fault_latch=0;arrangement_gate=0;arrangement_gate_count=0;runtime_variation=1;pending_variation=0;pending_variation_q=0;last_variation_request=-1;LANES=700000;STEPS=710000;LANE_WORDS=12;STEP_WORDS=19;lane_count=0;OFFQ=4096;OFFQ_CAP=8192;OFFQ_WORDS=4;off_size=0;off_peak=0;ONQ=36864;ONQ_CAP=8192;ONQ_WORDS=12;on_size=0;on_peak=0;queue_seq=0;STAGE_OFF=1000000;STAGE_OFF_CAP=8192;STAGE_NOW=1032768;STAGE_NOW_CAP=12288;STAGE_FUTURE=1180224;STAGE_FUTURE_CAP=8192;SHADOW_LANES=1278528;SHADOW_LANE_WORDS=3;SHADOW_LANE_CAP=833;STAGE_EMIT=1281027;STAGE_EMIT_CAP=12288;stage_off_count=0;stage_now_size=0;stage_future_count=0;stage_emit_count=0;stage_owned_count=0;stage_seq=0;stage_fault=0;schedule_fault=0;memset(0,0,4096);
 MAX_GATE_PPM=16000000;
 HOT_LANES=900000;HOT_LANE_WORDS=7;BUDGET_LINKS=906000;VARS=1191000;VAR_WORDS=3;var_count=0;LANE_GROOVE=1269100;GROOVES=1270000;GROOVE_WORDS=260;
-  PADMAP=1364000;PAD_WORDS=18;GROUPS=1367000;GROUP_WORDS=28;GROUP_CAP=32;PADGROUP=1368000;ACTIVESEQ=1368200;ACTIVENOTE=1368400;LEGATO=1368600;group_count=0;group_output_pad=0;group_output_pass=1;memset(ACTIVESEQ,0,128);memset(ACTIVENOTE,ROOT_NOTE,128);memset(LEGATO,0,128);
+  PADMAP=1430000;PAD_WORDS=18;GROUPS=1433000;GROUP_WORDS=28;GROUP_CAP=32;PADGROUP=1434000;ACTIVESEQ=1434200;ACTIVENOTE=1434400;LEGATO=1434600;RRASSIGN=1435000;RRASSIGN_CAP=8192;RRASSIGN_WORDS=3;group_count=0;group_output_pad=0;group_output_pass=1;memset(ACTIVESEQ,0,128);memset(ACTIVENOTE,ROOT_NOTE,128);memset(LEGATO,0,128);memset(RRASSIGN,-1,RRASSIGN_CAP*RRASSIGN_WORDS);
 INPUT_BEND=1269000;INPUT_PAN=1269020;INPUT_SLIDE=1269040;INPUT_SHIFT=1269060;INPUT_GLIDE=1269080;i=0;loop(16,INPUT_BEND[i]=8192;INPUT_PAN[i]=1001;INPUT_SLIDE[i]=0;INPUT_SHIFT[i]=0;INPUT_GLIDE[i]=-1;i+=1;);
 // Fixed regions are separated by their full worst-case capacities. Step and
 // event records grew for filter locks; retaining the old addresses caused the
 // loop queue, groove state, input state, and serialized snapshot to overlap.
-STEPS=1700000;VARS=1369000;LANE_GROOVE=1369200;GROOVES=1371000;
-INPUT_BEND=1388000;INPUT_PAN=1388020;INPUT_SLIDE=1388040;INPUT_SHIFT=1388060;INPUT_GLIDE=1388080;INPUT_CUTOFF=1388100;INPUT_RESONANCE=1388120;INPUT_DRIVE=1388140;
+STEPS=1700000;VARS=1460000;LANE_GROOVE=1461000;GROOVES=1463000;
+INPUT_BEND=1481000;INPUT_PAN=1481020;INPUT_SLIDE=1481040;INPUT_SHIFT=1481060;INPUT_GLIDE=1481080;INPUT_CUTOFF=1481100;INPUT_RESONANCE=1481120;INPUT_DRIVE=1481140;
  i=0;loop(16,INPUT_BEND[i]=8192;INPUT_PAN[i]=1001;INPUT_SLIDE[i]=0;INPUT_SHIFT[i]=0;INPUT_GLIDE[i]=-1;INPUT_CUTOFF[i]=-1;INPUT_RESONANCE[i]=-1;INPUT_DRIVE[i]=-1;i+=1;);
 SER_MAGIC=52446;SER_VERSION=2;SER_TRAILER=64245;SER_RUNTIME=2000000;SER_RUNTIME_CAP=262144;SER_MAP=2262144;SER_MAP_CAP=20000;
 function off_less(a,b)local(oa,ob,qa,qb,sa,sb)(oa=a*OFFQ_WORDS;ob=b*OFFQ_WORDS;qa=OFFQ[oa];qb=OFFQ[ob];sa=OFFQ[oa+1];sb=OFFQ[ob+1];(qa<qb)||((qa==qb)&&(sa<sb)););
@@ -152,13 +152,13 @@ function off_pop()local(i,left,right,best,more)(off_size>0?(off_size-=1;off_size
 function on_less(a,b)local(oa,ob,qa,qb,sa,sb)(oa=a*ONQ_WORDS;ob=b*ONQ_WORDS;qa=ONQ[oa];qb=ONQ[ob];sa=ONQ[oa+1];sb=ONQ[ob+1];(qa<qb)||((qa==qb)&&(sa<sb)););
 function on_swap(a,b)local(oa,ob,j,v)(oa=a*ONQ_WORDS;ob=b*ONQ_WORDS;j=0;loop(ONQ_WORDS,v=ONQ[oa+j];ONQ[oa+j]=ONQ[ob+j];ONQ[ob+j]=v;j+=1;););
 function on_copy(dst,src)local(od,os,j)(od=dst*ONQ_WORDS;os=src*ONQ_WORDS;j=0;loop(ONQ_WORDS,ONQ[od+j]=ONQ[os+j];j+=1;););
-function on_push_seq(on,seq,pad,note,vel,pan,gate,cut,res,drive)local(i,parent,more,o,put)(put=on_size<ONQ_CAP;put?(i=on_size;on_size+=1;on_peak=max(on_peak,on_size);o=i*ONQ_WORDS;ONQ[o]=on;ONQ[o+1]=seq;ONQ[o+2]=pad;ONQ[o+3]=note;ONQ[o+4]=vel;ONQ[o+5]=pan;ONQ[o+6]=gate;ONQ[o+7]=cut;ONQ[o+8]=res;ONQ[o+9]=drive;more=1;while(more)(i>0?(parent=floor((i-1)/2);on_less(i,parent)?(on_swap(i,parent);i=parent;):(more=0;);):(more=0;);););put;);
-function on_push(on,pad,note,vel,pan,gate,cut,res,drive)local(put)(put=on_push_seq(on,queue_seq,pad,note,vel,pan,gate,cut,res,drive);put?queue_seq+=1;put;);
+function on_push_seq(on,seq,pad,note,vel,pan,gate,cut,res,drive,rr_action,rr_parent)local(i,parent,more,o,put)(put=on_size<ONQ_CAP;put?(i=on_size;on_size+=1;on_peak=max(on_peak,on_size);o=i*ONQ_WORDS;ONQ[o]=on;ONQ[o+1]=seq;ONQ[o+2]=pad;ONQ[o+3]=note;ONQ[o+4]=vel;ONQ[o+5]=pan;ONQ[o+6]=gate;ONQ[o+7]=cut;ONQ[o+8]=res;ONQ[o+9]=drive;ONQ[o+10]=rr_action;ONQ[o+11]=rr_parent;more=1;while(more)(i>0?(parent=floor((i-1)/2);on_less(i,parent)?(on_swap(i,parent);i=parent;):(more=0;);):(more=0;);););put;);
+function on_push(on,pad,note,vel,pan,gate,cut,res,drive)local(put)(put=on_push_seq(on,queue_seq,pad,note,vel,pan,gate,cut,res,drive,0,-1);put?queue_seq+=1;put;);
 function on_pop()local(i,left,right,best,more)(on_size>0?(on_size-=1;on_size>0?(on_copy(0,on_size);i=0;more=1;while(more)(left=i*2+1;left<on_size?(right=left+1;best=left;right<on_size&&on_less(right,left)?best=right;on_less(best,i)?(on_swap(best,i);i=best;):(more=0;);):(more=0;);););););
 function stage_now_less(a,b)local(oa,ob,qa,qb,sa,sb)(oa=a*ONQ_WORDS;ob=b*ONQ_WORDS;qa=STAGE_NOW[oa];qb=STAGE_NOW[ob];sa=STAGE_NOW[oa+1];sb=STAGE_NOW[ob+1];(qa<qb)||((qa==qb)&&(sa<sb)););
 function stage_now_swap(a,b)local(oa,ob,j,v)(oa=a*ONQ_WORDS;ob=b*ONQ_WORDS;j=0;loop(ONQ_WORDS,v=STAGE_NOW[oa+j];STAGE_NOW[oa+j]=STAGE_NOW[ob+j];STAGE_NOW[ob+j]=v;j+=1;););
 function stage_now_copy(dst,src)local(od,os,j)(od=dst*ONQ_WORDS;os=src*ONQ_WORDS;j=0;loop(ONQ_WORDS,STAGE_NOW[od+j]=STAGE_NOW[os+j];j+=1;););
-function stage_now_push_seq(on,seq,pad,note,vel,pan,gate,cut,res,drive)local(i,parent,more,o,put)(put=stage_now_size<STAGE_NOW_CAP;put?(i=stage_now_size;stage_now_size+=1;o=i*ONQ_WORDS;STAGE_NOW[o]=on;STAGE_NOW[o+1]=seq;STAGE_NOW[o+2]=pad;STAGE_NOW[o+3]=note;STAGE_NOW[o+4]=vel;STAGE_NOW[o+5]=pan;STAGE_NOW[o+6]=gate;STAGE_NOW[o+7]=cut;STAGE_NOW[o+8]=res;STAGE_NOW[o+9]=drive;gate>0?(stage_owned_count+=1;);more=1;while(more)(i>0?(parent=floor((i-1)/2);stage_now_less(i,parent)?(stage_now_swap(i,parent);i=parent;):(more=0;);):(more=0;););):(stage_fault=1;);put;);
+function stage_now_push_seq(on,seq,pad,note,vel,pan,gate,cut,res,drive,rr_action,rr_parent)local(i,parent,more,o,put)(put=stage_now_size<STAGE_NOW_CAP;put?(i=stage_now_size;stage_now_size+=1;o=i*ONQ_WORDS;STAGE_NOW[o]=on;STAGE_NOW[o+1]=seq;STAGE_NOW[o+2]=pad;STAGE_NOW[o+3]=note;STAGE_NOW[o+4]=vel;STAGE_NOW[o+5]=pan;STAGE_NOW[o+6]=gate;STAGE_NOW[o+7]=cut;STAGE_NOW[o+8]=res;STAGE_NOW[o+9]=drive;STAGE_NOW[o+10]=rr_action;STAGE_NOW[o+11]=rr_parent;gate>0?(stage_owned_count+=1;);more=1;while(more)(i>0?(parent=floor((i-1)/2);stage_now_less(i,parent)?(stage_now_swap(i,parent);i=parent;):(more=0;);):(more=0;););):(stage_fault=1;);put;);
 function stage_now_pop()local(i,left,right,best,more)(stage_now_size>0?(stage_now_size-=1;stage_now_size>0?(stage_now_copy(0,stage_now_size);i=0;more=1;while(more)(left=i*2+1;left<stage_now_size?(right=left+1;best=left;right<stage_now_size&&stage_now_less(right,left)?best=right;stage_now_less(best,i)?(stage_now_swap(best,i);i=best;):(more=0;);):(more=0;);););););
 function stop_all_pads()local(p)(p=0;loop(128,midi_bus=floor(p/16);midisend(0,0xB0|(p%16),123,0);p+=1;););
 function reset_input_performance()local(i)(i=0;loop(16,INPUT_BEND[i]=8192;INPUT_PAN[i]=1001;INPUT_SLIDE[i]=0;INPUT_SHIFT[i]=0;INPUT_GLIDE[i]=-1;INPUT_CUTOFF[i]=-1;INPUT_RESONANCE[i]=-1;INPUT_DRIVE[i]=-1;i+=1;););
@@ -191,8 +191,15 @@ function pad_apply_choke(pad,sample_offset)local(b,g,p,i,t,did)(b=pad*PAD_WORDS;
 function load_pending()local(base,n,i,c,v,pos,len,tag,ok,done)(base=slider31|0;n=slider32|0;ok=slider29==52444&&slider30==2&&n>=18&&n<=262144&&gmem[base]==52444&&gmem[base+1]==2&&gmem[base+2]==n&&gmem[base+3]==slider33;ok?(c=1;i=6;loop(n-5,v=gmem[base+8+i];c=(c*48271+modword(v))%MOD;i+=1;);ok=c==slider33;);ok?(pos=17;done=0;loop(n-16,ok&&!done?(tag=gmem[base+8+pos];len=gmem[base+8+pos+1];(len<0||pos+1+len>n)?ok=0:tag==255?(ok=len==0&&pos+1==n;done=1;):pos+=2+len;););ok=ok&&done;);ok?(i=1;loop(n,100000[i-1]=gmem[base+8+i];i+=1;);pending_words=n;pending_revision=100000[5]|0;slider36=pending_revision;runtime_promote_latched=0;map_pending_words>0&&map_pending_revision!=pending_revision?(map_pending_words=0;map_pending_revision=0;map_promote_latched=0;);):(pending_words=0;pending_revision=0;slider36=0;runtime_promote_latched=0;);ok;);
 function reset_groups()local(i,b)(i=0;loop(group_count,b=i*GROUP_WORDS;GROUPS[b+24]=0;GROUPS[b+25]=1;GROUPS[b+26]=-1;GROUPS[b+27]=max(1,abs(GROUPS[b+4])%(MOD-1));i+=1;););
 function groove_shift(v,q,trim)local(b,count,num,den,unit,slot,amount)(b=(v-1)*GROOVE_WORDS;count=GROOVES[b]|0;count>0?(num=GROOVES[b+1];den=GROOVES[b+2];unit=4*num/den;slot=floor(q/unit+.5);amount=max(0,min(100000,GROOVES[b+3]+trim));abs(q-slot*unit)<0.00000001?GROOVES[b+4+(slot%count)]/960*amount/100000:0;):0;);
-function reset_schedule_history(clear_fault)local(i,b)(i=0;loop(lane_count,b=i*LANE_WORDS;LANES[b+9]=0;LANES[b+10]=0;i+=1;);on_size=0;on_peak=0;reset_groups();clear_fault?schedule_fault=0;);
-function map_qn(t)local(i,n,p,q0,t0,q1,t1,result,found)(n=980000[10];result=-HUGE;found=0;t==980000[8]?result=980000[6]:t==980000[9]?result=980000[7]:(i=0;loop(n-1,!found?(p=12+i*2;q0=980000[p];t0=980000[p+1];q1=980000[p+2];t1=980000[p+3];t>=t0&&t<=t1?(result=q0+(t-t0)*(q1-q0)/(t1-t0);found=1;););i+=1;););result;);
+function reset_schedule_history(clear_fault)local(i,b)(i=0;loop(lane_count,b=i*LANE_WORDS;LANES[b+9]=0;LANES[b+10]=0;i+=1;);on_size=0;on_peak=0;memset(RRASSIGN,-1,RRASSIGN_CAP*RRASSIGN_WORDS);reset_groups();clear_fault?schedule_fault=0;);
+// Rebase only timing-derived state after REAPER's native beat clock moves
+// backward while project time continues forward (for example, lowering the
+// project tempo during playback). Sounding-note ownership and round-robin
+// cursors are independent and must survive this correction.
+function rebase_schedule_history(q)local(i,b,sp)(
+  on_size=0;on_peak=0;memset(RRASSIGN,-1,RRASSIGN_CAP*RRASSIGN_WORDS);schedule_fault=0;
+  i=0;loop(lane_count,b=i*LANE_WORDS;sp=4*LANES[b+4]/LANES[b+5];LANES[b+9]=0;LANES[b+10]=max(0,floor(q/sp));i+=1;);
+);
 function build_scheduler()local(pos,tag,n,f,li,si,cur,step_cursor,p,g,j,b,vi,hot,old_lane_count,oi,ob,hb,matched,timing_changed,q,sp)(
   hot=(play_state&1)&&lane_count>0;old_lane_count=lane_count;
   timing_changed=0;
@@ -232,7 +239,7 @@ function build_scheduler()local(pos,tag,n,f,li,si,cur,step_cursor,p,g,j,b,vi,hot
     // it. Rebase every lane at the playhead when a hot edit changes division,
     // length, or phase; otherwise the old cursor can move the next clock far
     // into the future and silence that lane until the script is restarted.
-    reset_schedule_history(1);q=map_qn(play_position);q>-HUGE/2?(i=0;loop(lane_count,b=i*LANE_WORDS;sp=4*LANES[b+4]/LANES[b+5];LANES[b+9]=max(0,floor(q/sp)+1);i+=1;););
+    reset_schedule_history(1);q=native_q0;i=0;loop(lane_count,b=i*LANE_WORDS;sp=4*LANES[b+4]/LANES[b+5];LANES[b+9]=max(0,floor(q/sp)+1);i+=1;);
   ):hot?(schedule_fault=0;):(reset_schedule_history(1));
 );
 function load_map()local(base,n,i,c,v,ok,p,q,t,pt,pq)(base=slider40|0;n=slider41|0;ok=slider38==52445&&slider39==1&&n>=16&&n<=20000&&pending_words>0&&gmem[base]==52445&&gmem[base+1]==1&&gmem[base+2]==n&&gmem[base+3]==slider42;ok?(c=1;i=5;loop(n-4,v=gmem[base+8+i];c=(c*48271+mapword(v))%MOD;i+=1;);ok=c==slider42;);ok?(gmem[base+8+5]!=pending_revision?(ok=0;):(p=13;pt=-HUGE;pq=-HUGE;loop(gmem[base+8+11],ok?(q=gmem[base+8+p];t=gmem[base+8+p+1];(!((q==q)&&(t==t))||q<=pq||t<=pt)?ok=0:(pq=q;pt=t;p+=2;);););););ok?(i=1;loop(n,950000[i-1]=gmem[base+8+i];i+=1;);map_pending_words=n;map_pending_revision=950000[4]|0;map_promote_latched=0;):(map_pending_words=0;map_pending_revision=0;map_promote_latched=0;);ok;);
@@ -291,9 +298,12 @@ function budget_pending()local(ok,pos,tag,rec_len,f,cur,active,expected,seen,ste
  slider45=ok?1:-1;ok;
 );
 function try_promote_pair()local(i,rev,accepted)(pending_words>0&&map_pending_words>0&&runtime_promote_latched&&map_promote_latched&&pending_revision==map_pending_revision?(accepted=budget_pending();accepted?(rev=pending_revision;i=0;loop(pending_words,400000[i]=100000[i];i+=1;);i=0;loop(map_pending_words,980000[i]=950000[i];i+=1;);active_words=pending_words;map_active_words=map_pending_words;active_budget_future=slider46;active_budget_block_ons=slider48;active_budget_retained=slider49;active_budget_block_qn_micro=slider52;runtime_fault_latch=0;slider35=rev;slider36=0;pending_words=0;pending_revision=0;map_pending_words=0;map_pending_revision=0;runtime_promote_latched=0;map_promote_latched=0;build_scheduler();):(pending_words=0;pending_revision=0;map_pending_words=0;map_pending_revision=0;slider36=0;runtime_promote_latched=0;map_promote_latched=0;);););
-function map_time(q)local(i,n,p,q0,t0,q1,t1,result,found)(n=980000[10];result=-HUGE;found=0;q==980000[6]?result=980000[8]:q==980000[7]?result=980000[9]:(i=0;loop(n-1,!found?(p=12+i*2;q0=980000[p];t0=980000[p+1];q1=980000[p+2];t1=980000[p+3];q>=q0&&q<=q1?(result=t0+(q-q0)*(t1-t0)/(q1-q0);found=1;););i+=1;););result;);
+// Convert QN to a sample offset in REAPER's current audio block. The live
+// sequencer deliberately shares the host's beat_position/tempo domain rather
+// than consulting the GUI-published transport map.
+function qn_sample(q)(floor((q-native_q0)*native_samples_per_qn+.5););
 function next_grid(q,unit,origin)local(x,b)(unit<=0?q:(x=(q-origin)/unit;b=origin+ceil(x-0.000000001)*unit;b<q-0.0000001?b+=unit;b;););
-function next_bar(q)local(n,p,i,mq,num,den,sq,nextq,b)(n=980000[11];p=12+980000[10]*2;mq=0;num=4;den=4;nextq=HUGE;i=0;loop(n,sq=980000[p+i*3];sq<=q+0.0000001?(mq=sq;num=980000[p+i*3+1];den=980000[p+i*3+2];):nextq==HUGE?nextq=sq;i+=1;);b=next_grid(q,num*4/den,mq);min(b,nextq););
+function next_bar(q)(next_grid(q,max(1,ts_num)*4/max(1,ts_denom),0););
 function variation_period(v)local(i,b,p,u)(p=0;i=0;loop(lane_count,b=i*LANE_WORDS;LANES[b+1]==v?(u=4*LANES[b+4]/LANES[b+5]*LANES[b+3];p=max(p,u););i+=1;);p>0?p:4;);
 function activate_variation(v)(runtime_variation=v;pending_variation=0;reset_schedule_history(1););
 function request_variation(v,q)local(base,code,unit,b)(
@@ -311,17 +321,18 @@ function request_variation(v,q)local(base,code,unit,b)(
 );
 // Sequencer work is staged transactionally.  Only safety note-offs may leave
 // the plug-in when preflight fails; caller-note ownership remains independent.
-function due_offs(q0,q1)local(d,seq,p,n,off,more,token)(more=1;while(more)(off_size>0&&OFFQ[0]<q1?(d=OFFQ[0];seq=OFFQ[1];p=OFFQ[2];n=OFFQ[3];off_pop();d>=q0?(token=seq+1;ACTIVESEQ[p]==token?(off=floor((map_time(d)-play_position)*srate+.5);off=max(0,min(samplesblock-1,off));midi_bus=floor(p/16);midisend(off,0x80|(p%16),n,0);ACTIVESEQ[p]=0;ACTIVENOTE[p]=ROOT_NOTE;););):(more=0;);););
+function due_offs(q0,q1)local(d,seq,p,n,off,more,token)(more=1;while(more)(off_size>0&&OFFQ[0]<q1?(d=OFFQ[0];seq=OFFQ[1];p=OFFQ[2];n=OFFQ[3];off_pop();d>=q0?(token=seq+1;ACTIVESEQ[p]==token?(off=qn_sample(d);off=max(0,min(samplesblock-1,off));midi_bus=floor(p/16);midisend(off,0x80|(p%16),n,0);ACTIVESEQ[p]=0;ACTIVENOTE[p]=ROOT_NOTE;););):(more=0;);););
 function stage_off_add(d,seq,p,n)local(o,put)(put=stage_off_count<STAGE_OFF_CAP;put?(o=stage_off_count*OFFQ_WORDS;STAGE_OFF[o]=d;STAGE_OFF[o+1]=seq;STAGE_OFF[o+2]=p;STAGE_OFF[o+3]=n;stage_off_count+=1;):(stage_fault=1;);put;);
-function stage_now_add(on,pad,note,vel,pan,gate,cut,res,drive)local(put)(put=stage_now_push_seq(on,stage_seq,pad,note,vel,pan,gate,cut,res,drive);put?stage_seq+=1;put;);
-function stage_future_add(on,pad,note,vel,pan,gate,cut,res,drive)local(o,put)(put=stage_future_count<STAGE_FUTURE_CAP;put?(o=stage_future_count*ONQ_WORDS;STAGE_FUTURE[o]=on;STAGE_FUTURE[o+1]=stage_seq;STAGE_FUTURE[o+2]=pad;STAGE_FUTURE[o+3]=note;STAGE_FUTURE[o+4]=vel;STAGE_FUTURE[o+5]=pan;STAGE_FUTURE[o+6]=gate;STAGE_FUTURE[o+7]=cut;STAGE_FUTURE[o+8]=res;STAGE_FUTURE[o+9]=drive;stage_future_count+=1;stage_seq+=1;):(stage_fault=1;);put;);
+function stage_now_add(on,pad,note,vel,pan,gate,cut,res,drive)local(put)(put=stage_now_push_seq(on,stage_seq,pad,note,vel,pan,gate,cut,res,drive,0,-1);put?stage_seq+=1;put;);
+function stage_future_add_seq(on,seq,pad,note,vel,pan,gate,cut,res,drive,rr_action,rr_parent)local(o,put)(put=stage_future_count<STAGE_FUTURE_CAP;put?(o=stage_future_count*ONQ_WORDS;STAGE_FUTURE[o]=on;STAGE_FUTURE[o+1]=seq;STAGE_FUTURE[o+2]=pad;STAGE_FUTURE[o+3]=note;STAGE_FUTURE[o+4]=vel;STAGE_FUTURE[o+5]=pan;STAGE_FUTURE[o+6]=gate;STAGE_FUTURE[o+7]=cut;STAGE_FUTURE[o+8]=res;STAGE_FUTURE[o+9]=drive;STAGE_FUTURE[o+10]=rr_action;STAGE_FUTURE[o+11]=rr_parent;stage_future_count+=1;):(stage_fault=1;);put;);
+function stage_future_add(on,pad,note,vel,pan,gate,cut,res,drive)local(put)(put=stage_future_add_seq(on,stage_seq,pad,note,vel,pan,gate,cut,res,drive,0,-1);put?stage_seq+=1;put;);
 // Mute/solo is an audio mask in the sampler. Dispatcher eligibility is based
 // only on a valid pad index so restored snapshots can never omit active lanes.
 function pad_enabled(pad)(pad>=0&&pad<128;);
 function stage_link_now(on,pad,note,vel,pan,gate,cut,res,drive)local(b,i,t)(pad_enabled(pad)?stage_now_add(on,pad,note,vel,pan,gate,cut,res,drive);b=pad*PAD_WORDS;i=0;loop(PADMAP[b+2],t=PADMAP[b+3+i];pad_enabled(t)?stage_now_add(on,t,note,vel,pan,gate,cut,res,drive);i+=1;););
 function stage_link_future(on,pad,note,vel,pan,gate,cut,res,drive)local(b,i,t)(pad_enabled(pad)?stage_future_add(on,pad,note,vel,pan,gate,cut,res,drive);b=pad*PAD_WORDS;i=0;loop(PADMAP[b+2],t=PADMAP[b+3+i];pad_enabled(t)?stage_future_add(on,t,note,vel,pan,gate,cut,res,drive);i+=1;););
 function stage_begin()local(i,b,s,n)(stage_off_count=0;stage_now_size=0;stage_future_count=0;stage_emit_count=0;stage_owned_count=0;stage_seq=queue_seq;stage_fault=lane_count>SHADOW_LANE_CAP;n=min(lane_count,SHADOW_LANE_CAP);i=0;loop(n,b=i*LANE_WORDS;s=i*SHADOW_LANE_WORDS;SHADOW_LANES[s]=LANES[b+9];SHADOW_LANES[s+1]=LANES[b+10];SHADOW_LANES[s+2]=-1;i+=1;););
-function stage_due(q0,q1)local(d,seq,p,n,on,vel,pan,gate,cut,res,drive,more,sample)(more=1;while(more&&!stage_fault)(off_size>0&&OFFQ[0]<q1?(d=OFFQ[0];seq=OFFQ[1];p=OFFQ[2];n=OFFQ[3];off_pop();d>=q0?stage_off_add(d,seq,p,n);):(more=0;););more=1;while(more&&!stage_fault)(on_size>0&&ONQ[0]<q1?(on=ONQ[0];sample=(map_time(on)-play_position)*srate;sample<samplesblock-.5?(seq=ONQ[1];p=ONQ[2];n=ONQ[3];vel=ONQ[4];pan=ONQ[5];gate=ONQ[6];cut=ONQ[7];res=ONQ[8];drive=ONQ[9];on_pop();stage_now_push_seq(on,seq,p,n,vel,pan,gate,cut,res,drive);):(more=0;);):(more=0;););!stage_fault;);
+function stage_due(q0,q1)local(d,seq,p,n,on,vel,pan,gate,cut,res,drive,rr_action,rr_parent,more,sample)(more=1;while(more&&!stage_fault)(off_size>0&&OFFQ[0]<q1?(d=OFFQ[0];seq=OFFQ[1];p=OFFQ[2];n=OFFQ[3];off_pop();d>=q0?stage_off_add(d,seq,p,n);):(more=0;););more=1;while(more&&!stage_fault)(on_size>0&&ONQ[0]<q1?(on=ONQ[0];sample=qn_sample(on);sample<samplesblock-.5?(seq=ONQ[1];p=ONQ[2];n=ONQ[3];vel=ONQ[4];pan=ONQ[5];gate=ONQ[6];cut=ONQ[7];res=ONQ[8];drive=ONQ[9];rr_action=ONQ[10];rr_parent=ONQ[11];on_pop();stage_now_push_seq(on,seq,p,n,vel,pan,gate,cut,res,drive,rr_action,rr_parent);):(more=0;);):(more=0;););!stage_fault;);
 function step_pass_shadow(li,base,k)local(c,a,b,prior,j)(c=STEPS[base+10];a=STEPS[base+11];b=STEPS[base+12];prior=0;c==0?1:c==1?k==0:c==2?k!=0:c==3?(floor(k/LANES[li*LANE_WORDS+3])%a)==b:c==4?fill_state:c==5?!fill_state:c==6?(b==0?prior=SHADOW_LANES[li*SHADOW_LANE_WORDS]:(j=0;loop(lane_count,LANES[j*LANE_WORDS]==b&&LANES[j*LANE_WORDS+1]==LANES[li*LANE_WORDS+1]?prior=SHADOW_LANES[j*SHADOW_LANE_WORDS];j+=1;););a?prior:!prior;):0;);
 function group_pick(pad)local(slot,b,n,mode,x,d,pass,advance,i,candidate,found)(
   group_output_pad=pad;group_output_pass=1;slot=PADGROUP[pad]|0;
@@ -336,6 +347,23 @@ function group_pick(pad)local(slot,b,n,mode,x,d,pass,advance,i,candidate,found)(
       pass?(group_output_pad=GROUPS[b+8+x];!pad_enabled(group_output_pad)?(found=0;i=0;loop(n,!found?(candidate=GROUPS[b+8+i];pad_enabled(candidate)?(group_output_pad=candidate;found=1;););i+=1;);!found?pass=0;););
     );
     group_output_pass=pass;
+  );
+);
+// Future entries retain only explicit source-pad and repeat-assignment fields.
+// The member is resolved when REAPER's current block actually owns the hit,
+// never while a lane clock is being examined ahead of the playhead.
+function rr_resolve(pad,action,parent)local(o)(
+  group_output_pad=pad;group_output_pass=1;
+  action>0?(
+    o=(parent%RRASSIGN_CAP)*RRASSIGN_WORDS;
+    action==1||action==4?(
+      group_pick(pad);RRASSIGN[o]=parent;RRASSIGN[o+1]=group_output_pad;RRASSIGN[o+2]=group_output_pass;
+    ):(
+      RRASSIGN[o]==parent?(group_output_pad=RRASSIGN[o+1];group_output_pass=RRASSIGN[o+2];):(
+        group_pick(pad);RRASSIGN[o]=parent;RRASSIGN[o+1]=group_output_pad;RRASSIGN[o+2]=group_output_pass;
+      );
+    );
+    action==3||action==4?RRASSIGN[o]=-1;
   );
 );
 function live_pad_emit(off,pad,input_note,vel,transpose,cents,pan,slide,shift,glide,cut,res,drive,voice)local(choke_at,note_at,did,output_note,bend,base_pan,wanted_pan,pan_delta)(
@@ -357,7 +385,7 @@ function performance_emit(off,pad,input_note,vel,transpose,cents,pan,slide,shift
 function live_emit(off,pad,input_note,vel,transpose)(performance_emit(off,pad,input_note,vel,transpose,0,1001,0,0,-1,-1,-1,-1););
 // Strictly equal clock-QN ticks read the pre-batch shadow history and commit
 // together.  Active history remains untouched throughout this reconstruction.
-function stage_schedule(q0,q1)local(li,b,s,k,sp,cq,minq,found,ix,base,ok,pr,r,on,pad,note,gate,horizon,more,chosen,gactive)(
+function stage_schedule(q0,q1)local(li,b,s,k,sp,cq,minq,found,ix,base,ok,pr,r,on,pad,note,gate,horizon,more,gactive,parent_seq,event_seq,rr_action,repeat_total)(
   horizon=q1+1;more=1;
   while(more&&!stage_fault)(
     found=0;minq=HUGE;li=0;
@@ -394,10 +422,9 @@ function stage_schedule(q0,q1)local(li,b,s,k,sp,cq,minq,found,ix,base,ok,pr,r,on
           ix=(k+LANES[b+6])%LANES[b+3];base=(LANES[b+8]+ix)*STEP_WORDS;
            ok=SHADOW_LANES[s+2];SHADOW_LANES[s]=ok==1;SHADOW_LANES[s+1]=k+1;
           ok?(
-             pad=LANES[b+2]-1;STEPS[base]==2?(chosen=pad;ok=1;):(group_pick(pad);chosen=group_output_pad;ok=group_output_pass;);r=0;
-             loop(STEPS[base]==2?1:STEPS[base+4],
-              !stage_fault&&ok?(
-                r>0&&PADGROUP[pad]>0&&GROUPS[(PADGROUP[pad]-1)*GROUP_WORDS+6]?(group_pick(pad);chosen=group_output_pad;ok=group_output_pass;);
+             pad=LANES[b+2]-1;r=0;repeat_total=STEPS[base]==2?1:STEPS[base+4];parent_seq=stage_seq;
+             loop(repeat_total,
+              !stage_fault?(
                 on=minq+STEPS[base+8]/960+r*4*STEPS[base+5]/STEPS[base+6];
                 note=max(0,min(127,ROOT_NOTE+STEPS[base+2]))+(STEPS[base+13]+100)*128;gate=STEPS[base]==2?0:STEPS[base]==3?-1:sp*STEPS[base+9]/PPM;
                 sens=max(1,LANES[b+11]/10000);deficit=max(0,(127-STEPS[base+1])/127);shift=max(0,min(1,(sens-1)*pow(deficit,1.5)));
@@ -407,7 +434,9 @@ function stage_schedule(q0,q1)local(li,b,s,k,sp,cq,minq,found,ix,base,ok,pr,r,on
                 // made live Drive/Cutoff/Resonance edits and resets appear
                 // broken until some unrelated edit rebuilt the snapshot.
                 cut_value=STEPS[base+15]>=0?STEPS[base+15]:-1;res_value=STEPS[base+16]>=0?STEPS[base+16]:-1;drive_value=STEPS[base+17]>=0?STEPS[base+17]:-1;
-                STEPS[base]==2?(on>=q0&&on<q1&&((map_time(on)-play_position)*srate<samplesblock-.5)?stage_now_add(on,chosen,note,0,1001,0,cut_value,res_value,drive_value):on>=q0?stage_future_add(on,chosen,note,0,1001,0,cut_value,res_value,drive_value);):(on>=q0&&on<q1&&((map_time(on)-play_position)*srate<samplesblock-.5)?stage_link_now(on,chosen,note,STEPS[base+1],pan_value,gate,cut_value,res_value,drive_value):on>=q0?stage_link_future(on,chosen,note,STEPS[base+1],pan_value,gate,cut_value,res_value,drive_value););
+                event_seq=stage_seq;stage_seq+=1;
+                rr_action=STEPS[base]==2||PADGROUP[pad]<=0?0:GROUPS[(PADGROUP[pad]-1)*GROUP_WORDS+6]||repeat_total==1?4:r==0?1:r==repeat_total-1?3:2;
+                on>=q0&&on<q1&&qn_sample(on)<samplesblock-.5?stage_now_push_seq(on,event_seq,pad,note,STEPS[base]==2?0:STEPS[base+1],STEPS[base]==2?1001:pan_value,gate,cut_value,res_value,drive_value,rr_action,parent_seq):on>=q0?stage_future_add_seq(on,event_seq,pad,note,STEPS[base]==2?0:STEPS[base+1],STEPS[base]==2?1001:pan_value,gate,cut_value,res_value,drive_value,rr_action,parent_seq);
               );
               r+=1;
             );
@@ -422,16 +451,28 @@ function stage_schedule(q0,q1)local(li,b,s,k,sp,cq,minq,found,ix,base,ok,pr,r,on
 function stage_bounds()(on_size+stage_future_count<=ONQ_CAP&&off_size+stage_owned_count<=OFFQ_CAP;);
 function latch_stage_fault()(schedule_fault=3;slider54=3;runtime_fault_latch=max(runtime_fault_latch,3););
 function stage_block(q0,q1)local(ok,bounds_ok)(slider60+=1;stage_begin();ok=stage_due(q0,q1);ok?(ok=stage_schedule(q0,q1););slider61=stage_now_size;slider62=stage_future_count;slider63=stage_owned_count;ok?(bounds_ok=stage_bounds();!bounds_ok?(stage_fault=1;ok=0;););!ok?(latch_stage_fault(););slider64=ok?1:-1;ok;);
-function stage_flatten_now()local(o,e,j)(stage_emit_count=0;while(stage_now_size>0)(o=0;e=stage_emit_count*ONQ_WORDS;j=0;loop(ONQ_WORDS,STAGE_EMIT[e+j]=STAGE_NOW[o+j];j+=1;);stage_emit_count+=1;stage_now_pop();););
+function stage_emit_add(on,seq,pad,note,vel,pan,gate,cut,res,drive)local(e,put)(put=stage_emit_count<STAGE_EMIT_CAP;put?(e=stage_emit_count*ONQ_WORDS;STAGE_EMIT[e]=on;STAGE_EMIT[e+1]=seq;STAGE_EMIT[e+2]=pad;STAGE_EMIT[e+3]=note;STAGE_EMIT[e+4]=vel;STAGE_EMIT[e+5]=pan;STAGE_EMIT[e+6]=gate;STAGE_EMIT[e+7]=cut;STAGE_EMIT[e+8]=res;STAGE_EMIT[e+9]=drive;STAGE_EMIT[e+10]=0;STAGE_EMIT[e+11]=-1;stage_emit_count+=1;gate>0?stage_owned_count+=1;):(stage_fault=1;);put;);
+function stage_resolve_now()local(o,on,seq,note,vel,pan,gate,cut,res,drive,pad,rr_action,rr_parent,b,i,t)(
+  stage_emit_count=0;stage_owned_count=0;
+  while(stage_now_size>0&&!stage_fault)(
+    o=0;on=STAGE_NOW[o];seq=STAGE_NOW[o+1];pad=STAGE_NOW[o+2];note=STAGE_NOW[o+3];vel=STAGE_NOW[o+4];pan=STAGE_NOW[o+5];gate=STAGE_NOW[o+6];cut=STAGE_NOW[o+7];res=STAGE_NOW[o+8];drive=STAGE_NOW[o+9];rr_action=STAGE_NOW[o+10];rr_parent=STAGE_NOW[o+11];stage_now_pop();
+    rr_resolve(pad,rr_action,rr_parent);pad=group_output_pad;
+    group_output_pass&&pad_enabled(pad)?(
+      stage_emit_add(on,seq,pad,note,vel,pan,gate,cut,res,drive);
+      vel>0?(b=pad*PAD_WORDS;i=0;loop(PADMAP[b+2],t=PADMAP[b+3+i];pad_enabled(t)?stage_emit_add(on,seq,t,note,vel,pan,gate,cut,res,drive);i+=1;););
+    );
+  );
+  !stage_fault;
+);
 function commit_staged(q0,q1)local(i,o,b,s,on,seq,pad,note,vel,pan,gate,off,cents,bend,d,token,newer,j,e,choke_at,note_at,did,slide,base_pan,wanted_pan,pan_delta)(
-  stage_flatten_now();
-  i=0;loop(stage_future_count,!stage_fault?(o=i*ONQ_WORDS;!on_push_seq(STAGE_FUTURE[o],STAGE_FUTURE[o+1],STAGE_FUTURE[o+2],STAGE_FUTURE[o+3],STAGE_FUTURE[o+4],STAGE_FUTURE[o+5],STAGE_FUTURE[o+6],STAGE_FUTURE[o+7],STAGE_FUTURE[o+8],STAGE_FUTURE[o+9])?stage_fault=1;);i+=1;);
+  stage_resolve_now();
+  i=0;loop(stage_future_count,!stage_fault?(o=i*ONQ_WORDS;!on_push_seq(STAGE_FUTURE[o],STAGE_FUTURE[o+1],STAGE_FUTURE[o+2],STAGE_FUTURE[o+3],STAGE_FUTURE[o+4],STAGE_FUTURE[o+5],STAGE_FUTURE[o+6],STAGE_FUTURE[o+7],STAGE_FUTURE[o+8],STAGE_FUTURE[o+9],STAGE_FUTURE[o+10],STAGE_FUTURE[o+11])?stage_fault=1;);i+=1;);
   i=0;loop(stage_emit_count,!stage_fault?(o=i*ONQ_WORDS;gate=STAGE_EMIT[o+6];gate>0?(!off_push_seq(STAGE_EMIT[o]+gate,STAGE_EMIT[o+1],STAGE_EMIT[o+2],STAGE_EMIT[o+3]%128)?stage_fault=1;););i+=1;);
   !stage_fault?(
     queue_seq=stage_seq;i=0;loop(lane_count,b=i*LANE_WORDS;s=i*SHADOW_LANE_WORDS;LANES[b+9]=SHADOW_LANES[s];LANES[b+10]=SHADOW_LANES[s+1];i+=1;);
     memset(LEGATO,0,128);
-    i=0;loop(stage_off_count,o=i*OFFQ_WORDS;d=STAGE_OFF[o];seq=STAGE_OFF[o+1];pad=STAGE_OFF[o+2];token=seq+1;newer=0;j=0;loop(stage_emit_count,e=j*ONQ_WORDS;STAGE_EMIT[e+2]==pad&&STAGE_EMIT[e+5]>=1900&&abs(STAGE_EMIT[e]-d)<=0.0000001?newer=1;j+=1;);newer?(LEGATO[pad]=1;);ACTIVESEQ[pad]==token&&!newer?(off=floor((map_time(d)-play_position)*srate+.5);off=max(0,min(samplesblock-1,off));midi_bus=floor(pad/16);midisend(off,0x80|(pad%16),STAGE_OFF[o+3],0);ACTIVESEQ[pad]=0;ACTIVENOTE[pad]=ROOT_NOTE;);i+=1;);
-i=0;loop(stage_emit_count,o=i*ONQ_WORDS;on=STAGE_EMIT[o];seq=STAGE_EMIT[o+1];pad=STAGE_EMIT[o+2];note=STAGE_EMIT[o+3];vel=STAGE_EMIT[o+4];off=floor((map_time(on)-play_position)*srate+.5);off=max(0,min(samplesblock-1,off));vel<=0?(pad_choke(pad,off);):(cents=floor(note/128)-100;note=note%128;bend=max(0,min(16383,floor(8192+cents*4096/100+.5)));pan=STAGE_EMIT[o+5];slide=pan>=1900;slide?(pan-=2000;);shift=0;pan>=1001?(shift=max(0,min(1,pan-1001));pan=1001;):(pan_base=floor(pan);shift=max(0,min(1,(pan-pan_base)*1000));pan=pan_base;);gate=STAGE_EMIT[o+6];LEGATO[pad]=slide&&ACTIVESEQ[pad]!=0;choke_at=off>0?off-1:off;did=pad_apply_choke(pad,choke_at);note_at=(did||disc)&&off==0?min(samplesblock-1,1):off;base_pan=PADMAP[pad*PAD_WORDS+12];wanted_pan=pan==1001?base_pan:pan;pan_delta=max(-100,min(100,wanted_pan-base_pan));ACTIVESEQ[pad]=seq+1;ACTIVENOTE[pad]=note;midi_bus=floor(pad/16);midisend(note_at,$xE0|(pad%16),bend%128,floor(bend/128));midisend(note_at,$xB0|(pad%16),10,max(1,min(127,floor(64+pan_delta*63/100+.5))));midisend(note_at,$xB0|(pad%16),68,LEGATO[pad]?127:0);midisend(note_at,$xB0|(pad%16),74,max(0,min(127,floor(shift*127+.5))));STAGE_EMIT[o+7]>=0?(midisend(note_at,$xB0|(pad%16),20,max(0,min(127,floor(STAGE_EMIT[o+7]*127/PPM+.5)))););STAGE_EMIT[o+8]>=0?(midisend(note_at,$xB0|(pad%16),21,max(0,min(127,floor(STAGE_EMIT[o+8]*127/PPM+.5)))););STAGE_EMIT[o+9]>=0?(midisend(note_at,$xB0|(pad%16),22,max(0,min(127,floor(STAGE_EMIT[o+9]*127/PPM+.5)))););midisend(note_at,$x90|(pad%16),note,vel);pad_flash(pad);gate==0?(midisend(note_at,$x80|(pad%16),note,0);ACTIVESEQ[pad]=0;ACTIVENOTE[pad]=ROOT_NOTE;););i+=1;);
+    i=0;loop(stage_off_count,o=i*OFFQ_WORDS;d=STAGE_OFF[o];seq=STAGE_OFF[o+1];pad=STAGE_OFF[o+2];token=seq+1;newer=0;j=0;loop(stage_emit_count,e=j*ONQ_WORDS;STAGE_EMIT[e+2]==pad&&STAGE_EMIT[e+5]>=1900&&abs(STAGE_EMIT[e]-d)<=0.0000001?newer=1;j+=1;);newer?(LEGATO[pad]=1;);ACTIVESEQ[pad]==token&&!newer?(off=qn_sample(d);off=max(0,min(samplesblock-1,off));midi_bus=floor(pad/16);midisend(off,0x80|(pad%16),STAGE_OFF[o+3],0);ACTIVESEQ[pad]=0;ACTIVENOTE[pad]=ROOT_NOTE;);i+=1;);
+i=0;loop(stage_emit_count,o=i*ONQ_WORDS;on=STAGE_EMIT[o];seq=STAGE_EMIT[o+1];pad=STAGE_EMIT[o+2];note=STAGE_EMIT[o+3];vel=STAGE_EMIT[o+4];off=qn_sample(on);off=max(0,min(samplesblock-1,off));vel<=0?(pad_choke(pad,off);):(cents=floor(note/128)-100;note=note%128;bend=max(0,min(16383,floor(8192+cents*4096/100+.5)));pan=STAGE_EMIT[o+5];slide=pan>=1900;slide?(pan-=2000;);shift=0;pan>=1001?(shift=max(0,min(1,pan-1001));pan=1001;):(pan_base=floor(pan);shift=max(0,min(1,(pan-pan_base)*1000));pan=pan_base;);gate=STAGE_EMIT[o+6];LEGATO[pad]=slide&&ACTIVESEQ[pad]!=0;choke_at=off>0?off-1:off;did=pad_apply_choke(pad,choke_at);note_at=(did||disc)&&off==0?min(samplesblock-1,1):off;base_pan=PADMAP[pad*PAD_WORDS+12];wanted_pan=pan==1001?base_pan:pan;pan_delta=max(-100,min(100,wanted_pan-base_pan));ACTIVESEQ[pad]=seq+1;ACTIVENOTE[pad]=note;midi_bus=floor(pad/16);midisend(note_at,$xE0|(pad%16),bend%128,floor(bend/128));midisend(note_at,$xB0|(pad%16),10,max(1,min(127,floor(64+pan_delta*63/100+.5))));midisend(note_at,$xB0|(pad%16),68,LEGATO[pad]?127:0);midisend(note_at,$xB0|(pad%16),74,max(0,min(127,floor(shift*127+.5))));STAGE_EMIT[o+7]>=0?(midisend(note_at,$xB0|(pad%16),20,max(0,min(127,floor(STAGE_EMIT[o+7]*127/PPM+.5)))););STAGE_EMIT[o+8]>=0?(midisend(note_at,$xB0|(pad%16),21,max(0,min(127,floor(STAGE_EMIT[o+8]*127/PPM+.5)))););STAGE_EMIT[o+9]>=0?(midisend(note_at,$xB0|(pad%16),22,max(0,min(127,floor(STAGE_EMIT[o+9]*127/PPM+.5)))););midisend(note_at,$x90|(pad%16),note,vel);pad_flash(pad);gate==0?(midisend(note_at,$x80|(pad%16),note,0);ACTIVESEQ[pad]=0;ACTIVENOTE[pad]=ROOT_NOTE;););i+=1;);
     due_offs(q0,q1);
   );
   stage_fault?(latch_stage_fault(););!stage_fault;
@@ -501,6 +542,7 @@ serialize_reading?(
 @block
 slider105=capture_id;capture_block(8000000);
 slider68=srate;
+native_q0=beat_position;native_samples_per_qn=srate*60/max(.000001,tempo);native_q1=native_q0+samplesblock/native_samples_per_qn;
 slider34!=last_commit?(last_commit=slider34;load_pending(););slider43!=last_map_commit?(last_map_commit=slider43;load_map(););
 slider37!=last_promote?(last_promote=slider37;runtime_promote_latched=1;);slider44!=last_map_promote?(last_map_promote=slider44;map_promote_latched=1;);samplesblock<=MAX_BLOCK_SAMPLES?try_promote_pair();
 valid=slider1==52443&&slider2==1&&slider3==1&&slider11>=1;transport_playing=play_state&1;transport_start=transport_playing&&!was_playing;
@@ -511,8 +553,9 @@ valid=slider1==52443&&slider2==1&&slider3==1&&slider11>=1;transport_playing=play
 // retained lane clocks is deterministic; clearing them drops the next step.
 // A backward jump is the explicit seek/loop-wrap signal.
 disc=transport_playing&&was_playing&&play_position+0.0001<last_play;
-(!transport_playing&&was_playing)||disc?(stop_all_pads();reset_state(1);reset_input_performance();reset_schedule_history(1);arrangement_gate=0;arrangement_gate_count=0;);transport_start&&slider7==2?(reset_state(1);reset_schedule_history(1););was_playing=transport_playing;last_play=play_position;
-slider71!=last_variation_request?(last_variation_request=slider71;next_variation=slider70|0;next_variation>=1&&next_variation<=var_count?(transport_playing&&map_active_words>0?request_variation(next_variation,map_qn(play_position)):activate_variation(next_variation);););
+native_q_tolerance=2/max(1,native_samples_per_qn);native_back=transport_playing&&was_playing&&native_clock_valid&&!disc&&native_q0+native_q_tolerance<last_native_q1;
+(!transport_playing&&was_playing)||disc?(stop_all_pads();reset_state(1);reset_input_performance();reset_schedule_history(1);arrangement_gate=0;arrangement_gate_count=0;);transport_start&&slider7==2?(reset_state(1);reset_schedule_history(1););native_back?rebase_schedule_history(native_q0);was_playing=transport_playing;last_play=play_position;last_native_q1=native_q1;native_clock_valid=transport_playing;
+slider71!=last_variation_request?(last_variation_request=slider71;next_variation=slider70|0;next_variation>=1&&next_variation<=var_count?(transport_playing?request_variation(next_variation,native_q0):activate_variation(next_variation);););
 slider86!=last_audition_release?(last_audition_release=slider86;release_all(AUDITION_KEY,0););
 // The GUI may submit several hits inside one audio block. Each committed token
 // owns a ring slot, so polling never collapses rapid hits into the newest one.
@@ -530,7 +573,7 @@ gate_before=arrangement_gate;
 while(midirecv(off,m1,m2,m3))(
   (m1&240)==144&&m3>0?capture_count((m1&15)*128+m2);
   st=m1&240;control=(m1&15)==15;
-  control&&st==192?(next_variation=(m2|0)+1;next_variation>=1&&next_variation<=var_count?(transport_playing&&map_active_words>0?request_variation(next_variation,map_qn(play_position+off/srate)):activate_variation(next_variation););):
+  control&&st==192?(next_variation=(m2|0)+1;next_variation>=1&&next_variation<=var_count?(transport_playing?request_variation(next_variation,native_q0+off/native_samples_per_qn):activate_variation(next_variation););):
   control&&m2==127&&(st==144||st==128)?(
     st==144&&m3>0?(arrangement_gate_count+=1;):(arrangement_gate_count=max(0,arrangement_gate_count-1););
     arrangement_gate=arrangement_gate_count>0;
@@ -558,18 +601,11 @@ while(midirecv(off,m1,m2,m3))(
 );
 arrangement_gate!=gate_before&&slider67>=1.5?(reset_state(1);reset_schedule_history(1););
 playing=transport_playing&&(slider67>=.5&&slider67<1.5||(slider67>=1.5&&arrangement_gate));
-// Phase 0's corrected transport domain is absolute-QN -> serialized project
-// time -> play_position/sample offset.  v2 has not yet carried that immutable
-// time-map table, so scheduling is deliberately disabled when the table is
-// absent; raw beat_position is never used as an absolute-QN clock.
-// The published project-time map supplies the immutable block QN bounds used by
-// the transactional sequencer preflight below.
-// QN/project-time anchors are rate-independent. The qspan guard below checks
-// every current block against the admitted scheduler budget after a device or
-// offline-render rate transition.
-transport_schedule_valid=map_active_words>0&&980000[4]==slider35&&play_position>=980000[8]&&play_position+samplesblock/srate<=980000[9];
+// REAPER owns the live musical clock. No GUI-published tempo map participates
+// in transport start, tempo changes, seeking, looping, or sample offsets.
+transport_schedule_valid=active_words>0&&tempo>0;
 block_guard=samplesblock>MAX_BLOCK_SAMPLES?1:0;
-playing&&transport_schedule_valid&&!block_guard?(q0=map_qn(play_position);q1=map_qn(play_position+samplesblock/srate);qspan=q1-q0;qspan<0||qspan>active_budget_block_qn_micro/PPM?block_guard=2:on_size>active_budget_future||off_size>active_budget_retained?block_guard=3;);
+playing&&transport_schedule_valid&&!block_guard?(q0=native_q0;q1=native_q1;qspan=q1-q0;qspan<0||qspan>64?block_guard=2:on_size>active_budget_future||off_size>active_budget_retained?block_guard=3;);
 block_guard?(slider54=block_guard;runtime_fault_latch=max(runtime_fault_latch,block_guard););
 playing&&transport_schedule_valid&&!block_guard&&!schedule_fault?(
   slider54=0;fill_state=slider65>=0.5;

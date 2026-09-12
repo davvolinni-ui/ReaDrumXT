@@ -1,9 +1,10 @@
 -- @description ReaDrumXT - Drum Sampler and Polymetric Step Sequencer
--- @version 0.1.9
+-- @version 0.1.10
 -- @author davvolinni-ui
 -- @changelog
---   Rebased the sequencer scheduler after live REAPER tempo changes.
---   Preserved copied patterns and variations when switching project tabs.
+--   Synchronized live sequencing directly to REAPER's native beat clock.
+--   Deferred round-robin selection until notes enter the current audio block.
+--   Rebased timing state safely after lowering tempo during playback.
 -- @link
 --   Support https://forum.cockos.com/showthread.php?t=310870
 --   Repository https://github.com/davvolinni-ui/ReaDrumXT

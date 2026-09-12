@@ -4360,8 +4360,10 @@ function UI:frame()
   if now>=(self.next_project_poll or 0) then
     self.next_project_poll=now+.05
     self.app:verify_startup_sync(now)
-    local timing_current=self.app:sync_transport_timing(now)
-    if timing_current then self.app:verify_runtime_rate(now) end
+    -- The dispatcher follows REAPER's native audio-block clock. Runtime
+    -- polling therefore repairs engine/rate ownership only; tempo changes do
+    -- not publish a second clock or reset live scheduler history.
+    self.app:verify_runtime_rate(now)
     self.app:sync_engine_variation()
     self.app:follow_engine_variation_display()
     if self.app.follow_variation_events then self.app:poll_variation_event_selection(false) end
