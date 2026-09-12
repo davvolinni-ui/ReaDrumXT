@@ -4,7 +4,8 @@
 -- runtime allocations and control state.
 local M = {}
 
-M.FX_NAME = "JS: ReaDrum/ReaDrum_SamplerBank16"
+M.FX_NAMES = {"JS: ReaDrumXT/ReaDrum/ReaDrum/ReaDrum_SamplerBank16","JS: ReaDrum/ReaDrum_SamplerBank16"}
+M.FX_NAME = M.FX_NAMES[1]
 M.GMEM_NAME = "ReaDrumSampler"
 M.MAGIC = 52460
 M.VERSION = 1
@@ -108,7 +109,11 @@ end
 
 function M.add(host, track, bank, namespace)
   integer(bank, "bank", 0, 7)
-  local index = host.TrackFX_AddByName(track, M.FX_NAME, false, -1)
+  local index=-1
+  for _,name in ipairs(M.FX_NAMES) do
+    index=host.TrackFX_AddByName(track,name,false,-1)
+    if index and index>=0 then break end
+  end
   assert(index and index >= 0, "could not instantiate ReaDrum Sampler Bank 16")
   set_integer_parameter(host,track,index,0,bank,7)
   if namespace ~= nil then set_integer_parameter(host,track,index,4,namespace_index(namespace),M.MAX_NAMESPACE) end

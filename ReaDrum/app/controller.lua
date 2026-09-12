@@ -426,8 +426,8 @@ function Controller:dispatcher(track)
     local name = self.adapter:fx_name(track, index)
     if name:find("ReaDrum Round Robin Dispatcher", 1, true) then return index end
   end
-  local index = self.adapter:add_fx(track, "JS: ReaDrum/ReaDrum_RoundRobinDispatcher")
-  assert(index and index >= 0, "ReaDrum dispatcher is not installed. Run tools/install_readrum.ps1 first.")
+  local index = sampler_engine.add_fx(self.host,track,"ReaDrum_RoundRobinDispatcher")
+  assert(index and index >= 0, "ReaDrum dispatcher is not installed. Reinstall ReaDrumXT through ReaPack.")
   self.adapter:hide_fx(track,index)
   return index
 end
@@ -1982,7 +1982,7 @@ function Controller:master_clipper(create)
     end
   end
   if not create then return track,nil end
-  local index=self.adapter:add_fx(track,"JS: ReaDrum/ReaDrum_MasterSoftClipper")
+  local index=sampler_engine.add_fx(self.host,track,"ReaDrum_MasterSoftClipper")
   if index and index>=0 then self.adapter:hide_fx(track,index);return track,index end
   return track,nil
 end
@@ -2018,7 +2018,7 @@ function Controller:gain_lfo(create)
     if self.adapter:fx_name(track,index):find("ReaDrum Gain LFO",1,true) then return track,index end
   end
   if not create then return track,nil end
-  local index=self.adapter:add_fx(track,"JS: ReaDrum/ReaDrum_GainLFO")
+  local index=sampler_engine.add_fx(self.host,track,"ReaDrum_GainLFO")
   if not index or index<0 then self.status="ReaDrum Gain LFO is not installed";return track,nil end
   self.adapter:hide_fx(track,index);return track,index
 end

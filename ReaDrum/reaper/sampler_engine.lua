@@ -6,6 +6,18 @@ local bank = require("ReaDrum.reaper.sampler_bank")
 local M = {}
 local dispatcher_reloaded = setmetatable({}, { __mode = "k" })
 local banks_reloaded = setmetatable({}, { __mode = "k" })
+local fx_prefixes={"JS: ReaDrumXT/ReaDrum/ReaDrum/","JS: ReaDrum/"}
+
+-- ReaPack namespaces installed files by repository and package category. Keep
+-- the original direct-install name as a fallback for existing projects and
+-- developer installs.
+function M.add_fx(host,track,name)
+  for _,prefix in ipairs(fx_prefixes) do
+    local fx=host.TrackFX_AddByName(track,prefix..name,false,-1)
+    if fx and fx>=0 then return fx end
+  end
+  return -1
+end
 
 local function sample_path(sample)
   if type(sample) == "table" then return sample.path end
@@ -145,7 +157,7 @@ function M.ensure_dispatcher(host, track)
       return fx
     end
   end
-  local fx = host.TrackFX_AddByName(track, "JS: ReaDrum/ReaDrum_RoundRobinDispatcher", false, -1)
+  local fx = M.add_fx(host,track,"ReaDrum_RoundRobinDispatcher")
   assert(fx and fx >= 0, "ReaDrum dispatcher is not installed")
   if host.TrackFX_Show then host.TrackFX_Show(track, fx, 2) end
   return fx
@@ -164,7 +176,7 @@ function M.ensure_send_fx(host,track)
       return fx
     end
   end
-  local fx=host.TrackFX_AddByName(track,"JS: ReaDrum/ReaDrum_SendFX",false,-1)
+  local fx=M.add_fx(host,track,"ReaDrum_SendFX")
   assert(fx and fx>=0,"ReaDrum shared send FX is not installed")
   if host.TrackFX_Show then host.TrackFX_Show(track,fx,2) end
   return fx
