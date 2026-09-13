@@ -628,6 +628,36 @@ function Controller:runtime_rack(yield_hook)
               end
             end
           end
+          -- These are pattern-publication rules, not another clock. REAPER still
+          -- owns execution time. A pattern cannot emit its opening note before
+          -- its own boundary, so pin only that phase-adjusted first step to zero.
+          local first_step_index=((tonumber(runtime_lane.phase) or 0)%runtime_lane.step_count)+1
+          local first_step=runtime_lane.steps[first_step_index]
+          if first_step and not first_step.cut and (tonumber(first_step.timing_offset) or 0)<0 then first_step.timing_offset=0 end
+          if glide_timing_lock then
+            -- Match rendered MIDI's legato rule in the published pattern: when
+            -- a note ends exactly at a following slide, overlap it by one MIDI
+            -- tick. The existing dispatcher then submits ordinary timestamped
+            -- MIDI to REAPER; no timer or secondary scheduler is involved.
+            local step_count=runtime_lane.step_count
+            local step_qn=4*runtime_lane.division_num/runtime_lane.division_den
+            local tick_gate=100/(step_qn*960)
+            for slide_index,slide_step in ipairs(runtime_lane.steps) do
+              if slide_step.enabled and not slide_step.cut and slide_step.slide then
+                for distance=1,step_count do
+                  local previous_index=((slide_index-distance-1)%step_count)+1
+                  local previous=runtime_lane.steps[previous_index]
+                  if previous.enabled and not previous.cut then
+                    local boundary_gate=distance*100
+                    if math.abs((tonumber(previous.gate) or 0)-boundary_gate)<.000001 then
+                      previous.gate=math.min(1600,boundary_gate+tick_gate)
+                    end
+                    break
+                  end
+                end
+              end
+            end
+          end
         end
       end
       for _,lane in ipairs(variation.lanes) do
@@ -900,7 +930,40 @@ function Controller:sync_pending_pad_controls()
 end
 
 function Controller:poll_sampler_loads(limit)
+  -- Track deletion is not kit deletion. The project model remains
+  -- authoritative, so reconstruct any missing native engine objects before
+  -- polling cached pointers or publishing into their FX instances.
+  -- REAPER's project change counter invalidates this cache when a track is
+  -- deleted; unchanged frames stay O(1) instead of rescanning the project.
+  self:refresh_track_cache(false)
+  local complete=self:find_track("folder",self.rack.id.."/folder") and self:find_track("dry") and self:find_track("sequencer")
+    and self:find_track("aux","aux_a") and self:find_track("aux","aux_b")
+  local banks,outputs={},{main=true}
+  for _,pad in ipairs(self.rack.pads or {}) do
+    if pad.sample~=false and pad.sample~=nil then
+      banks[math.floor(((tonumber(pad.logical_index)or 1)-1)/16)]=true
+      outputs[pad.output_id or "main"]=true
+    end
+  end
+  for bank_index in pairs(banks) do if not self:find_track("bank",tostring(bank_index)) then complete=false;break end end
+  if complete then for output_id in pairs(outputs) do if not self:find_track("output",output_id) then complete=false;break end end end
+  if self.sampler_rebuild_required then complete=false;self.sampler_rebuild_required=nil end
+  if not complete then
+    self.sampler_cache={};self.bank_tracks={};self:invalidate_track_cache()
+    local report=lifecycle.reconcile(self.adapter,self.rack,{engine="sampler_bank",sampler_cache={},undo_label="ReaDrum: restore deleted engine tracks"})
+    self.sampler_cache=report.sampler_cache or {};self.bank_tracks=report.bank_tracks or {}
+    self:invalidate_track_cache()
+    self.revision=self.revision%16777214+1;self:publish()
+    self.startup_sync={expected=self.revision,next_check=self.host.time_precise()+.25,attempts=0}
+    self.status="Rebuilt deleted ReaDrumXT tracks"
+    return {checked=0,ready=0,failed=0,lost_tracks=0,reconstructed=true}
+  end
   local result=sampler_engine.poll(self.host,self:find_track("sequencer"),self.sampler_cache,limit or 4)
+  if result.lost_tracks>0 then
+    -- A pointer can become invalid after the track scan only at a defer
+    -- boundary. Force a full native reconstruction on the next frame.
+    self.sampler_rebuild_required=true;self:invalidate_track_cache()
+  end
   local repaired=0
   for index,pad in ipairs(self.rack.pads or {}) do
     if repaired<(limit or 4) and pad.sample~=false and pad.sample~=nil then

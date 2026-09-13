@@ -131,7 +131,7 @@ ext_noinit=1;
 ext_tail_size=0;
 ext_midi_bus=1;
 slider68=srate;
-MOD=2147483647;MUL=48271;PPM=1000000;HUGE=pow(10,100);SAFE_INT=9007199254740991;ROOT_NOTE=69;LIVE_BASE=36;AUDITION_KEY=4095;BUDGET_FUTURE=8192;BUDGET_BLOCK_CLOCKS=8192;BUDGET_BLOCK_ONS=4096;BUDGET_OFFS=8192;BUDGET_RECON=65536;MAX_BLOCK_SAMPLES=16384;cursor=0;direction=1;last_random=-1;rng=1;scheduler_rng=1;last_play=0;was_playing=0;native_clock_valid=0;last_native_q1=0;last_reset=0;token_next=0;last_commit=-1;last_promote=-1;last_map_commit=-1;last_map_promote=-1;last_audition_request=-1;last_audition_release=-1;pending_words=0;pending_revision=0;active_words=0;active_budget_future=0;active_budget_block_ons=0;active_budget_retained=0;active_budget_block_qn_micro=0;map_pending_words=0;map_pending_revision=0;map_active_words=0;runtime_promote_latched=0;map_promote_latched=0;runtime_fault_latch=0;arrangement_gate=0;arrangement_gate_count=0;runtime_variation=1;pending_variation=0;pending_variation_q=0;last_variation_request=-1;LANES=700000;STEPS=710000;LANE_WORDS=12;STEP_WORDS=19;lane_count=0;OFFQ=4096;OFFQ_CAP=8192;OFFQ_WORDS=4;off_size=0;off_peak=0;ONQ=36864;ONQ_CAP=8192;ONQ_WORDS=12;on_size=0;on_peak=0;queue_seq=0;STAGE_OFF=1000000;STAGE_OFF_CAP=8192;STAGE_NOW=1032768;STAGE_NOW_CAP=12288;STAGE_FUTURE=1180224;STAGE_FUTURE_CAP=8192;SHADOW_LANES=1278528;SHADOW_LANE_WORDS=3;SHADOW_LANE_CAP=833;STAGE_EMIT=1281027;STAGE_EMIT_CAP=12288;stage_off_count=0;stage_now_size=0;stage_future_count=0;stage_emit_count=0;stage_owned_count=0;stage_seq=0;stage_fault=0;schedule_fault=0;memset(0,0,4096);
+MOD=2147483647;MUL=48271;PPM=1000000;HUGE=pow(10,100);SAFE_INT=9007199254740991;ROOT_NOTE=69;LIVE_BASE=36;AUDITION_KEY=4095;BUDGET_FUTURE=8192;BUDGET_BLOCK_CLOCKS=8192;BUDGET_BLOCK_ONS=4096;BUDGET_OFFS=8192;BUDGET_RECON=65536;MAX_BLOCK_SAMPLES=16384;cursor=0;direction=1;last_random=-1;rng=1;scheduler_rng=1;last_play=0;was_playing=0;native_clock_valid=0;last_native_q0=0;last_reset=0;token_next=0;last_commit=-1;last_promote=-1;last_map_commit=-1;last_map_promote=-1;last_audition_request=-1;last_audition_release=-1;pending_words=0;pending_revision=0;active_words=0;active_budget_future=0;active_budget_block_ons=0;active_budget_retained=0;active_budget_block_qn_micro=0;map_pending_words=0;map_pending_revision=0;map_active_words=0;runtime_promote_latched=0;map_promote_latched=0;runtime_fault_latch=0;arrangement_gate=0;arrangement_gate_count=0;runtime_variation=1;pending_variation=0;pending_variation_q=0;last_variation_request=-1;LANES=700000;STEPS=710000;LANE_WORDS=12;STEP_WORDS=19;lane_count=0;OFFQ=4096;OFFQ_CAP=8192;OFFQ_WORDS=4;off_size=0;off_peak=0;ONQ=36864;ONQ_CAP=8192;ONQ_WORDS=12;on_size=0;on_peak=0;queue_seq=0;STAGE_OFF=1000000;STAGE_OFF_CAP=8192;STAGE_NOW=1032768;STAGE_NOW_CAP=12288;STAGE_FUTURE=1180224;STAGE_FUTURE_CAP=8192;SHADOW_LANES=1278528;SHADOW_LANE_WORDS=3;SHADOW_LANE_CAP=833;STAGE_EMIT=1281027;STAGE_EMIT_CAP=12288;stage_off_count=0;stage_now_size=0;stage_future_count=0;stage_emit_count=0;stage_owned_count=0;stage_seq=0;stage_fault=0;schedule_fault=0;memset(0,0,4096);
 MAX_GATE_PPM=16000000;
 HOT_LANES=900000;HOT_LANE_WORDS=7;BUDGET_LINKS=906000;VARS=1191000;VAR_WORDS=3;var_count=0;LANE_GROOVE=1269100;GROOVES=1270000;GROOVE_WORDS=260;
   PADMAP=1430000;PAD_WORDS=18;GROUPS=1433000;GROUP_WORDS=28;GROUP_CAP=32;PADGROUP=1434000;ACTIVESEQ=1434200;ACTIVENOTE=1434400;LEGATO=1434600;RRASSIGN=1435000;RRASSIGN_CAP=8192;RRASSIGN_WORDS=3;group_count=0;group_output_pad=0;group_output_pass=1;memset(ACTIVESEQ,0,128);memset(ACTIVENOTE,ROOT_NOTE,128);memset(LEGATO,0,128);memset(RRASSIGN,-1,RRASSIGN_CAP*RRASSIGN_WORDS);
@@ -183,20 +183,18 @@ function pad_choke(pad,sample_offset)local(active)(active=pad>=0&&pad<128&&ACTIV
 // The legacy last-pad sliders remain populated for older script versions.
 function pad_flash(pad)(capture_count(2048+pad);slider87=pad+1;slider88=(slider88%16777214)+1;gmem[1400000+pad]=(gmem[1400000+pad]%16777214)+1;);
 function audition_slot(i)(i==0?slider89:i==1?slider90:i==2?slider91:i==3?slider92:i==4?slider93:i==5?slider94:i==6?slider95:i==7?slider96:i==8?slider97:i==9?slider98:i==10?slider99:i==11?slider100:i==12?slider101:i==13?slider102:i==14?slider103:slider104;);
-// Preserve normal self-choke for every fresh/retriggered hit. ACTIVESEQ stays
-// owned only when an earlier note ends at this exact boundary, which is the
-// one case where the sampler must receive the next note without a pre-choke so
-// Gate+Glide can retarget its active voice.
+// Preserve normal self-choke for fresh hits. A slide carries raw musical intent
+// to the sampler, which alone decides whether a real audio voice can glide.
+// Exact handoffs retain dispatcher ownership only long enough to avoid sending
+// a note-off immediately before the slide note-on.
 function pad_apply_choke(pad,sample_offset)local(b,g,p,i,t,did)(b=pad*PAD_WORDS;g=PADMAP[b]|0;did=0;PADMAP[b+1]&&!LEGATO[pad]?(did=max(did,pad_choke(pad,sample_offset)););g>0?(p=0;loop(128,p!=pad&&PADMAP[p*PAD_WORDS]==g?(did=max(did,pad_choke(p,sample_offset)););p+=1;););i=0;loop(PADMAP[b+7],t=PADMAP[b+8+i]|0;t>=0?(did=max(did,pad_choke(t,sample_offset)););i+=1;);did;);
 function load_pending()local(base,n,i,c,v,pos,len,tag,ok,done)(base=slider31|0;n=slider32|0;ok=slider29==52444&&slider30==2&&n>=18&&n<=262144&&gmem[base]==52444&&gmem[base+1]==2&&gmem[base+2]==n&&gmem[base+3]==slider33;ok?(c=1;i=6;loop(n-5,v=gmem[base+8+i];c=(c*48271+modword(v))%MOD;i+=1;);ok=c==slider33;);ok?(pos=17;done=0;loop(n-16,ok&&!done?(tag=gmem[base+8+pos];len=gmem[base+8+pos+1];(len<0||pos+1+len>n)?ok=0:tag==255?(ok=len==0&&pos+1==n;done=1;):pos+=2+len;););ok=ok&&done;);ok?(i=1;loop(n,100000[i-1]=gmem[base+8+i];i+=1;);pending_words=n;pending_revision=100000[5]|0;slider36=pending_revision;runtime_promote_latched=0;map_pending_words>0&&map_pending_revision!=pending_revision?(map_pending_words=0;map_pending_revision=0;map_promote_latched=0;);):(pending_words=0;pending_revision=0;slider36=0;runtime_promote_latched=0;);ok;);
 function reset_groups()local(i,b)(i=0;loop(group_count,b=i*GROUP_WORDS;GROUPS[b+24]=0;GROUPS[b+25]=1;GROUPS[b+26]=-1;GROUPS[b+27]=max(1,abs(GROUPS[b+4])%(MOD-1));i+=1;););
 function groove_shift(v,q,trim)local(b,count,num,den,unit,slot,amount)(b=(v-1)*GROOVE_WORDS;count=GROOVES[b]|0;count>0?(num=GROOVES[b+1];den=GROOVES[b+2];unit=4*num/den;slot=floor(q/unit+.5);amount=max(0,min(100000,GROOVES[b+3]+trim));abs(q-slot*unit)<0.00000001?GROOVES[b+4+(slot%count)]/960*amount/100000:0;):0;);
 function reset_schedule_history(clear_fault)local(i,b)(i=0;loop(lane_count,b=i*LANE_WORDS;LANES[b+9]=0;LANES[b+10]=0;i+=1;);on_size=0;on_peak=0;memset(RRASSIGN,-1,RRASSIGN_CAP*RRASSIGN_WORDS);reset_groups();clear_fault?schedule_fault=0;);
-// Rebase only timing-derived state after REAPER's native beat clock moves
-// backward while project time continues forward (for example, lowering the
-// project tempo during playback). Sounding-note ownership and round-robin
-// cursors are independent and must survive this correction.
-function rebase_schedule_history(q)local(i,b,sp)(
+// Anchor only timing-derived state to REAPER's current beat. Sounding-note
+// ownership and round-robin cursors remain independent.
+function align_schedule_to_host(q)local(i,b,sp)(
   on_size=0;on_peak=0;memset(RRASSIGN,-1,RRASSIGN_CAP*RRASSIGN_WORDS);schedule_fault=0;
   i=0;loop(lane_count,b=i*LANE_WORDS;sp=4*LANES[b+4]/LANES[b+5];LANES[b+9]=0;LANES[b+10]=max(0,floor(q/sp));i+=1;);
 );
@@ -368,7 +366,7 @@ function rr_resolve(pad,action,parent)local(o)(
 );
 function live_pad_emit(off,pad,input_note,vel,transpose,cents,pan,slide,shift,glide,cut,res,drive,voice)local(choke_at,note_at,did,output_note,bend,base_pan,wanted_pan,pan_delta)(
   output_note=max(0,min(127,ROOT_NOTE+transpose));
-  LEGATO[pad]=slide&&ACTIVESEQ[pad]!=0;
+  LEGATO[pad]=slide;
   choke_at=off>0?off-1:off;did=pad_apply_choke(pad,choke_at);note_at=did&&off==0?min(samplesblock-1,1):off;
   alloc(pad,input_note,voice);ACTIVESEQ[pad]=-(voice+1);ACTIVENOTE[pad]=output_note;
   bend=max(0,min(16383,floor(8192+cents*4096/100+.5)));
@@ -471,8 +469,8 @@ function commit_staged(q0,q1)local(i,o,b,s,on,seq,pad,note,vel,pan,gate,off,cent
   !stage_fault?(
     queue_seq=stage_seq;i=0;loop(lane_count,b=i*LANE_WORDS;s=i*SHADOW_LANE_WORDS;LANES[b+9]=SHADOW_LANES[s];LANES[b+10]=SHADOW_LANES[s+1];i+=1;);
     memset(LEGATO,0,128);
-    i=0;loop(stage_off_count,o=i*OFFQ_WORDS;d=STAGE_OFF[o];seq=STAGE_OFF[o+1];pad=STAGE_OFF[o+2];token=seq+1;newer=0;j=0;loop(stage_emit_count,e=j*ONQ_WORDS;STAGE_EMIT[e+2]==pad&&STAGE_EMIT[e+5]>=1900&&abs(STAGE_EMIT[e]-d)<=0.0000001?newer=1;j+=1;);newer?(LEGATO[pad]=1;);ACTIVESEQ[pad]==token&&!newer?(off=qn_sample(d);off=max(0,min(samplesblock-1,off));midi_bus=floor(pad/16);midisend(off,0x80|(pad%16),STAGE_OFF[o+3],0);ACTIVESEQ[pad]=0;ACTIVENOTE[pad]=ROOT_NOTE;);i+=1;);
-i=0;loop(stage_emit_count,o=i*ONQ_WORDS;on=STAGE_EMIT[o];seq=STAGE_EMIT[o+1];pad=STAGE_EMIT[o+2];note=STAGE_EMIT[o+3];vel=STAGE_EMIT[o+4];off=qn_sample(on);off=max(0,min(samplesblock-1,off));vel<=0?(pad_choke(pad,off);):(cents=floor(note/128)-100;note=note%128;bend=max(0,min(16383,floor(8192+cents*4096/100+.5)));pan=STAGE_EMIT[o+5];slide=pan>=1900;slide?(pan-=2000;);shift=0;pan>=1001?(shift=max(0,min(1,pan-1001));pan=1001;):(pan_base=floor(pan);shift=max(0,min(1,(pan-pan_base)*1000));pan=pan_base;);gate=STAGE_EMIT[o+6];LEGATO[pad]=slide&&ACTIVESEQ[pad]!=0;choke_at=off>0?off-1:off;did=pad_apply_choke(pad,choke_at);note_at=(did||disc)&&off==0?min(samplesblock-1,1):off;base_pan=PADMAP[pad*PAD_WORDS+12];wanted_pan=pan==1001?base_pan:pan;pan_delta=max(-100,min(100,wanted_pan-base_pan));ACTIVESEQ[pad]=seq+1;ACTIVENOTE[pad]=note;midi_bus=floor(pad/16);midisend(note_at,$xE0|(pad%16),bend%128,floor(bend/128));midisend(note_at,$xB0|(pad%16),10,max(1,min(127,floor(64+pan_delta*63/100+.5))));midisend(note_at,$xB0|(pad%16),68,LEGATO[pad]?127:0);midisend(note_at,$xB0|(pad%16),74,max(0,min(127,floor(shift*127+.5))));STAGE_EMIT[o+7]>=0?(midisend(note_at,$xB0|(pad%16),20,max(0,min(127,floor(STAGE_EMIT[o+7]*127/PPM+.5)))););STAGE_EMIT[o+8]>=0?(midisend(note_at,$xB0|(pad%16),21,max(0,min(127,floor(STAGE_EMIT[o+8]*127/PPM+.5)))););STAGE_EMIT[o+9]>=0?(midisend(note_at,$xB0|(pad%16),22,max(0,min(127,floor(STAGE_EMIT[o+9]*127/PPM+.5)))););midisend(note_at,$x90|(pad%16),note,vel);pad_flash(pad);gate==0?(midisend(note_at,$x80|(pad%16),note,0);ACTIVESEQ[pad]=0;ACTIVENOTE[pad]=ROOT_NOTE;););i+=1;);
+    i=0;loop(stage_off_count,o=i*OFFQ_WORDS;d=STAGE_OFF[o];seq=STAGE_OFF[o+1];pad=STAGE_OFF[o+2];token=seq+1;newer=0;j=0;loop(stage_emit_count,e=j*ONQ_WORDS;STAGE_EMIT[e+2]==pad&&STAGE_EMIT[e+5]>=1900&&abs(qn_sample(STAGE_EMIT[e])-qn_sample(d))<=1?newer=1;j+=1;);newer?(LEGATO[pad]=1;);ACTIVESEQ[pad]==token&&!newer?(off=qn_sample(d);off=max(0,min(samplesblock-1,off));midi_bus=floor(pad/16);midisend(off,0x80|(pad%16),STAGE_OFF[o+3],0);ACTIVESEQ[pad]=0;ACTIVENOTE[pad]=ROOT_NOTE;);i+=1;);
+i=0;loop(stage_emit_count,o=i*ONQ_WORDS;on=STAGE_EMIT[o];seq=STAGE_EMIT[o+1];pad=STAGE_EMIT[o+2];note=STAGE_EMIT[o+3];vel=STAGE_EMIT[o+4];off=qn_sample(on);off=max(0,min(samplesblock-1,off));vel<=0?(pad_choke(pad,off);):(cents=floor(note/128)-100;note=note%128;bend=max(0,min(16383,floor(8192+cents*4096/100+.5)));pan=STAGE_EMIT[o+5];slide=pan>=1900;slide?(pan-=2000;);shift=0;pan>=1001?(shift=max(0,min(1,pan-1001));pan=1001;):(pan_base=floor(pan);shift=max(0,min(1,(pan-pan_base)*1000));pan=pan_base;);gate=STAGE_EMIT[o+6];LEGATO[pad]=slide;choke_at=off>0?off-1:off;did=pad_apply_choke(pad,choke_at);note_at=(did||disc)&&off==0?min(samplesblock-1,1):off;base_pan=PADMAP[pad*PAD_WORDS+12];wanted_pan=pan==1001?base_pan:pan;pan_delta=max(-100,min(100,wanted_pan-base_pan));ACTIVESEQ[pad]=seq+1;ACTIVENOTE[pad]=note;midi_bus=floor(pad/16);midisend(note_at,$xE0|(pad%16),bend%128,floor(bend/128));midisend(note_at,$xB0|(pad%16),10,max(1,min(127,floor(64+pan_delta*63/100+.5))));midisend(note_at,$xB0|(pad%16),68,LEGATO[pad]?127:0);midisend(note_at,$xB0|(pad%16),74,max(0,min(127,floor(shift*127+.5))));STAGE_EMIT[o+7]>=0?(midisend(note_at,$xB0|(pad%16),20,max(0,min(127,floor(STAGE_EMIT[o+7]*127/PPM+.5)))););STAGE_EMIT[o+8]>=0?(midisend(note_at,$xB0|(pad%16),21,max(0,min(127,floor(STAGE_EMIT[o+8]*127/PPM+.5)))););STAGE_EMIT[o+9]>=0?(midisend(note_at,$xB0|(pad%16),22,max(0,min(127,floor(STAGE_EMIT[o+9]*127/PPM+.5)))););midisend(note_at,$x90|(pad%16),note,vel);pad_flash(pad);gate==0?(midisend(note_at,$x80|(pad%16),note,0);ACTIVESEQ[pad]=0;ACTIVENOTE[pad]=ROOT_NOTE;););i+=1;);
     due_offs(q0,q1);
   );
   stage_fault?(latch_stage_fault(););!stage_fault;
@@ -553,8 +551,8 @@ valid=slider1==52443&&slider2==1&&slider3==1&&slider11>=1;transport_playing=play
 // retained lane clocks is deterministic; clearing them drops the next step.
 // A backward jump is the explicit seek/loop-wrap signal.
 disc=transport_playing&&was_playing&&play_position+0.0001<last_play;
-native_q_tolerance=2/max(1,native_samples_per_qn);native_back=transport_playing&&was_playing&&native_clock_valid&&!disc&&native_q0+native_q_tolerance<last_native_q1;
-(!transport_playing&&was_playing)||disc?(stop_all_pads();reset_state(1);reset_input_performance();reset_schedule_history(1);arrangement_gate=0;arrangement_gate_count=0;);transport_start&&slider7==2?(reset_state(1);reset_schedule_history(1););native_back?rebase_schedule_history(native_q0);was_playing=transport_playing;last_play=play_position;last_native_q1=native_q1;native_clock_valid=transport_playing;
+native_q_tolerance=2/max(1,native_samples_per_qn);host_beat_back=transport_playing&&was_playing&&native_clock_valid&&!disc&&native_q0+native_q_tolerance<last_native_q0;
+(!transport_playing&&was_playing)||disc?(stop_all_pads();reset_state(1);reset_input_performance();reset_schedule_history(1);arrangement_gate=0;arrangement_gate_count=0;);transport_start&&slider7==2?(reset_state(1);reset_schedule_history(1););(transport_start||disc||host_beat_back)?align_schedule_to_host(native_q0);was_playing=transport_playing;last_play=play_position;last_native_q0=native_q0;native_clock_valid=transport_playing;
 slider71!=last_variation_request?(last_variation_request=slider71;next_variation=slider70|0;next_variation>=1&&next_variation<=var_count?(transport_playing?request_variation(next_variation,native_q0):activate_variation(next_variation);););
 slider86!=last_audition_release?(last_audition_release=slider86;release_all(AUDITION_KEY,0););
 // The GUI may submit several hits inside one audio block. Each committed token
@@ -609,12 +607,10 @@ playing&&transport_schedule_valid&&!block_guard?(q0=native_q0;q1=native_q1;qspan
 block_guard?(slider54=block_guard;runtime_fault_latch=max(runtime_fault_latch,block_guard););
 playing&&transport_schedule_valid&&!block_guard&&!schedule_fault?(
   slider54=0;fill_state=slider65>=0.5;
-  // A loop wrap can place the first block fractionally beyond the loop-start
-  // tick. History and queues were reset above, so safely reconstruct one full
-  // block behind q0 and clamp the recovered event to sample zero. A fresh
-  // transport start keeps the tighter two-sample tolerance to avoid replaying
-  // an event when the user deliberately starts just after it.
-  schedule_q0=q0;disc?schedule_q0=q0-(q1-q0):transport_start?schedule_q0=q0-(q1-q0)*2/max(1,samplesblock);
+  // At a transport boundary, inspect at most the immediately preceding audio
+  // block and clamp a recovered boundary event to sample zero. Lane clocks are
+  // already anchored to REAPER's current beat, so no earlier history is scanned.
+  schedule_q0=q0;(transport_start||disc||host_beat_back)?schedule_q0=q0-(q1-q0);
   pending_variation&&pending_variation_q<=q0+0.0000001?(activate_variation(pending_variation););
   pending_variation&&pending_variation_q>q0+0.0000001&&pending_variation_q<q1-0.0000001?(
     switch_q=pending_variation_q;switch_target=pending_variation;stage_ok=run_stage(q0,switch_q);stage_ok?(activate_variation(switch_target);stage_ok=run_stage(switch_q,q1););

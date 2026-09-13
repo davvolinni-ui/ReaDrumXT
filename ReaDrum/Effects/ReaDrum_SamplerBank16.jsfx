@@ -492,12 +492,12 @@ i=0;loop(SLOTS,LAST_AUDITION[i]=gmem[bank_base+AUDITION_OFFSET+i*4];i+=1;);
 bank_base=1800000+(slider5|0)*8*BANK_STRIDE+(slider1|0)*BANK_STRIDE;
 bank_base!=active_bank_base ? (
   // Binding can be rewritten while the controller reconciles the engine.
-  // Loaded audio belongs to this FX instance, so never erase committed slot
-  // metadata here: doing so silences the whole bank during normal playback.
-  // Reset only mailbox observations and pending swap state; the controller
-  // will explicitly replace samples whose paths actually changed.
+  // Keep the loaded audio available, but invalidate its generation because a
+  // command token is unique only inside one bank/namespace mailbox. Otherwise
+  // an equal token in the new mailbox can make stale audio look current and
+  // suppress the correct replacement after a reconstructed track is rebound.
   v=0;loop(MAX_VOICES,VOICES[voice(v,0)]=0;v+=1;);active_voice_limit=0;
-  i=0;loop(SLOTS,META[meta(i,7)]=0;META[meta(i,8)]=-1;META[meta(i,9)]=0;META[meta(i,10)]=0;CTRL[ctrl(i,0)]=-1;LAST_AUDITION[i]=gmem[bank_base+AUDITION_OFFSET+i*4];i+=1;);
+  i=0;loop(SLOTS,META[meta(i,3)]=-1;META[meta(i,7)]=0;META[meta(i,8)]=-1;META[meta(i,9)]=0;META[meta(i,10)]=0;CTRL[ctrl(i,0)]=-1;LAST_AUDITION[i]=gmem[bank_base+AUDITION_OFFSET+i*4];i+=1;);
   active_bank_base=bank_base;
 );
 

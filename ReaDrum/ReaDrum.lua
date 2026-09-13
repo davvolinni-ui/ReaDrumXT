@@ -1,9 +1,9 @@
 -- @description ReaDrumXT - Drum Sampler and Polymetric Step Sequencer
--- @version 0.1.11
+-- @version 0.1.12
 -- @author davvolinni-ui
 -- @changelog
---   Fixed clean ReaPack installations failing to locate packaged JSFX.
---   Preserved compatibility with existing direct installations and projects.
+--   Improved transport-boundary scheduling and slide/glide handoffs.
+--   Rebuilds deleted managed engine tracks and safely reloads rebound banks.
 -- @link
 --   Support https://forum.cockos.com/showthread.php?t=310870
 --   Repository https://github.com/davvolinni-ui/ReaDrumXT

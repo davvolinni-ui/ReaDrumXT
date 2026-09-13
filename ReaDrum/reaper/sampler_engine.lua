@@ -279,11 +279,18 @@ end
 
 function M.poll(host, track, cache, limit)
   limit=limit or 4
-  local checked,ready,failed=0,0,0
+  local checked,ready,failed,lost_tracks=0,0,0,0
   local rebound={}
   local playing=host.GetPlayState and ((host.GetPlayState() or 0)&1)~=0
-  for _,entry in pairs(cache or {}) do
-    if type(entry)=="table" and entry.ready then
+  for pad_id,entry in pairs(cache or {}) do
+    local bank_track=type(entry)=="table" and (entry.track or track) or nil
+    local track_valid=bank_track~=nil and (not host.ValidatePtr or host.ValidatePtr(bank_track,"MediaTrack*"))
+    if type(entry)=="table" and not track_valid then
+      -- Managed tracks are disposable. A user can delete them between defer
+      -- cycles, so never pass the retained MediaTrack pointer back to REAPER.
+      -- The controller will reconstruct this cache entry from saved rack data.
+      cache[pad_id]=nil;lost_tracks=lost_tracks+1
+    elseif type(entry)=="table" and entry.ready then
       -- Status is historical. Verify the JSFX still has committed slot
       -- metadata so a recompile/rebind cannot leave a pad permanently silent.
       local live=bank.live(host,entry.bank-1,entry.slot-1,entry.namespace)
@@ -304,7 +311,6 @@ function M.poll(host, track, cache, limit)
       -- A newly inserted JSFX compiles asynchronously. REAPER can restore its
       -- default sliders after the first synchronous parameter write, so bind
       -- the mailbox again while its initial sample request is outstanding.
-      local bank_track=entry.track or track
       if bank_track and not rebound[entry.bank] then
         -- Polling is read-mostly.  Do not issue TrackFX_Show every frame while
         -- a large kit is decoding; native FX-window commands make REAPER's
@@ -328,7 +334,7 @@ function M.poll(host, track, cache, limit)
       end
     end
   end
-  return {checked=checked,ready=ready,failed=failed}
+  return {checked=checked,ready=ready,failed=failed,lost_tracks=lost_tracks}
 end
 
 local function pad_publication(rack,pad,cache_entry,audible)
