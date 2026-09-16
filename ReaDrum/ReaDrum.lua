@@ -1,9 +1,10 @@
 -- @description ReaDrumXT - Drum Sampler and Polymetric Step Sequencer
--- @version 0.1.12
+-- @version 0.1.13
 -- @author davvolinni-ui
 -- @changelog
---   Improved transport-boundary scheduling and slide/glide handoffs.
---   Rebuilds deleted managed engine tracks and safely reloads rebound banks.
+--   Pad audition works independently of MIDI-track arm and monitoring.
+--   Creates AUX buses when used, and respects MIDI-track defaults.
+--   Adds Ctrl-drag step clearing and tighter MIDI pad focus.
 -- @link
 --   Support https://forum.cockos.com/showthread.php?t=310870
 --   Repository https://github.com/davvolinni-ui/ReaDrumXT

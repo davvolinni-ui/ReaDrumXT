@@ -97,7 +97,7 @@ local PROPERTIES = {
   { label="Cutoff", short="CUT", key="filter_cutoff_lock", kind="lock", base="filter_cutoff_hz", min=0, max=1, default=false, format=cutoff_text },
   { label="Resonance", short="RES", key="filter_resonance_lock", kind="lock", base="filter_resonance", min=0, max=1, default=false, format=function(v)return string.format("%.0f%%",v*100)end },
   { label="Drive", short="DRIVE", key="drive_lock", kind="lock", base="drive", min=0, max=1, default=false, format=function(v)return string.format("%.0f%%",v*100)end },
-  { label="Repeat", short="REPEAT", key="repeat_count", kind="int", min=1, max=64, default=1, format="%d" },
+  { label="Repeat", short="REPEAT", key="repeat_count", kind="int", min=1, max=16, default=1, format="%d" },
   { label="Ratchet", short="RATCHET", key="repeat_divide", kind="divide", min=1, max=16, default=1, format="x%d" },
   { label="Probability", short="CHANCE", key="probability", kind="double", min=0, max=100, default=100, format="%.0f" },
   -- Keep the editor focused on microtiming: +/-120 ticks is half a 1/16 note.
@@ -220,7 +220,7 @@ function UI.new(host, app)
     host=host, app=app, ctx=host.ImGui_CreateContext("ReaDrumXT", flags), open=true,
     property=1, info_open=false, info_tab="variations", parameter_open=false, editor_mode="properties", lane_toolbar_open=true, inspector_open=true, parameter_height=190, main_view="sequencer",
     inspector_mode="pads", edit_focus="steps", multi_select=false, pad_pitch_mode="transpose",
-    selected_pads={}, pad_flash_until={}, pad_trigger_tokens=false, mixer_clip_until={}, mixer_meter_hold={}, mixer_meter_time={}, engine_trigger_token=false, waveform_cache={}, waveform_duration={}, waveform_queue={}, waveform_queue_set={}, waveform_jobs={}, waveform_failures={}, live_pad_controls_pending=false, next_live_control_sync=0, next_live_runtime_sync=0, audition_due=false, audition_token=0, audition_release_token=0, paint_active=false, paint_value=false, paint_button=0, paint_lane=false, paint_last_step=false, paint_accent=false,
+    selected_pads={}, pad_flash_until={}, pad_trigger_tokens=false, mixer_clip_until={}, mixer_meter_hold={}, mixer_meter_time={}, engine_trigger_token=false, waveform_cache={}, waveform_duration={}, waveform_queue={}, waveform_queue_set={}, waveform_jobs={}, waveform_failures={}, live_pad_controls_pending=false, next_live_control_sync=0, next_live_runtime_sync=0, audition_due=false, audition_token=0, audition_release_token=0, paint_active=false, paint_value=false, paint_button=0, paint_lane=false, paint_last_step=false, paint_accent=false, paint_clear=false,
     property_paint_active=false, property_paint_lane=false, property_paint_key=false, property_paint_position=false, property_paint_value=false,
     property_line_active=false, property_line_lane=false, property_line_key=false, property_line_position=false, property_line_value=false,
     property_reset_active=false, property_reset_lane=false, property_reset_key=false, property_reset_position=false,
@@ -333,7 +333,7 @@ function UI:bind_app(app)
   app.max_outputs=self.max_outputs
   self.selected_pads={}
   self.pad_flash_until={};self.pad_trigger_tokens=false;self.engine_trigger_token=false;self.recent_midi_signature=false
-  self.audition_due=false;self.paint_active=false;self.paint_lane=false;self.paint_last_step=false
+  self.audition_due=false;self.paint_active=false;self.paint_lane=false;self.paint_last_step=false;self.paint_clear=false
   self.groove_popup_seen=false;self.groove_popup_active=false;self.groove_preview_entry=false;self.groove_nav_index=1;self.groove_nav_entry=false
   self.property_line_active=false;self.property_line_lane=false;self.property_line_key=false
   self.pad_drag_select=false;self.pad_drag_origin=false;self.pad_rearrange_drag=false
@@ -572,13 +572,19 @@ end
 
 function UI:poll_played_pad()
   local r,app=self.host,self.app
-  if not self.follow_played_pad or not r.MIDI_GetRecentInputEvent then return end
+  if not r.MIDI_GetRecentInputEvent then return end
   local ok,message,timestamp,device=r.MIDI_GetRecentInputEvent(0)
   if not ok or type(message)~="string" or #message<3 then return end
   local status,note,velocity=message:byte(1,3)
   local signature=table.concat({tostring(timestamp),tostring(device),tostring(status),tostring(note),tostring(velocity)},":")
   if signature==self.recent_midi_signature then return end
+  -- Consume every global input event even while this rack is inactive. If the
+  -- signature were left stale, selecting/auto-arming the MIDI track could make
+  -- the last note played into another instrument focus a ReaDrum pad.
   self.recent_midi_signature=signature
+  if not self.follow_played_pad or not r.GetMediaTrackInfo_Value then return end
+  local track=app:find_track("sequencer")
+  if not track or (r.GetMediaTrackInfo_Value(track,"I_RECARM") or 0)<.5 then return end
   if (status&0xF0)==0x90 and velocity>0 and note>=0 and note<=127 then
     app:select_pad(((note-PAD_MIDI_BASE+128)%128)+1)
   end
@@ -927,6 +933,8 @@ function UI:apply_selected_pad_control_edit(edit,immediate)
 end
 
 function UI:apply_selected_pad_controls(values,immediate)
+  if values.reverb_send~=nil then self.app:ensure_aux_track("aux_a") end
+  if values.delay_send~=nil then self.app:ensure_aux_track("aux_b") end
   self:apply_selected_pad_control_edit(function(controls)
     for key,value in pairs(values) do controls[key]=value end
   end,immediate)
@@ -2079,7 +2087,9 @@ function UI:apply_step_paint(lane,target_step)
   local changed=false
   for position=first,last do
     local step=lane.steps[position]
-    if self.paint_accent then
+    if self.paint_clear then
+      lane.steps[position]=model.new_step();changed=true
+    elseif self.paint_accent then
       local accented=self.paint_accent=="on"
       if not step.enabled or step.accent~=accented or step.cut then step.enabled=true;step.cut=false;step.accent=accented;changed=true end
     elseif step.enabled~=self.paint_value or step.accent or step.cut then
@@ -2242,7 +2252,7 @@ function UI:sequence_grid(height)
     -- These values are frame-global. Querying the ImGui bridge for them in
     -- every cell was pure repeated work and made a static grid CPU-heavy.
     local frame_mouse_x=r.ImGui_GetMousePos(c)
-    local _,frame_shift,frame_alt=self:key_modifiers()
+    local frame_ctrl,frame_shift,frame_alt=self:key_modifiers()
     local frame_draw=r.ImGui_GetWindowDrawList(c)
     local frame_window_x=r.ImGui_GetWindowPos(c)
     local frame_window_width=r.ImGui_GetWindowSize(c)
@@ -2353,24 +2363,29 @@ function UI:sequence_grid(height)
         local hovered=self:item_hovered_for_drag()
         local origin_lane_x_hovered=self.paint_active and self.paint_lane==index and frame_mouse_x>=cell_x1 and frame_mouse_x<cell_x1+GRID_CELL_STRIDE
         local right_begin=hovered and r.ImGui_IsMouseClicked and r.ImGui_IsMouseClicked(c,1)
-        if begin_paint and frame_shift then
+        if begin_paint and frame_ctrl then
+          app:select_pad(index);app.selected_step=step_index;self.edit_focus="steps"
+          self.paint_active=true;self.paint_button=0;self.paint_lane=index;self.paint_last_step=step_index
+          self.paint_value=false;self.paint_accent=false;self.paint_clear=true
+          lane.steps[step_index]=model.new_step();app:mark_dirty(false)
+        elseif begin_paint and frame_shift then
           app:select_pad(index);app.selected_step=step_index;self.edit_focus="steps"
           step.cut=not step.cut;step.enabled=false;step.accent=false;step.pitch_semitones=0;step.pitch_cents=0;step.gate=100;app:mark_dirty(false)
         elseif begin_paint and frame_alt then
           app:select_pad(index);app.selected_step=step_index
           self.edit_focus="steps"
           self.paint_active=true;self.paint_button=0;self.paint_lane=index;self.paint_last_step=step_index
-          self.paint_accent=accented and "off" or "on";self.paint_value=true
+          self.paint_accent=accented and "off" or "on";self.paint_value=true;self.paint_clear=false
           step.enabled=true;step.cut=false;step.accent=self.paint_accent=="on";app:mark_dirty(false)
         elseif right_begin then
           app:select_pad(index); app.selected_step=step_index
           self.edit_focus="steps"
-          self.paint_value=true;self.paint_active=true;self.paint_button=1;self.paint_lane=index;self.paint_last_step=step_index;self.paint_accent=accented and "off" or "on"
+          self.paint_value=true;self.paint_active=true;self.paint_button=1;self.paint_lane=index;self.paint_last_step=step_index;self.paint_accent=accented and "off" or "on";self.paint_clear=false
           step.enabled=true;step.cut=false;step.accent=self.paint_accent=="on";app:mark_dirty(false)
         elseif begin_paint then
           app:select_pad(index); app.selected_step=step_index
           self.edit_focus="steps"
-          self.paint_value=not step.enabled; self.paint_active=true;self.paint_button=0;self.paint_lane=index;self.paint_last_step=step_index;self.paint_accent=false
+          self.paint_value=not step.enabled; self.paint_active=true;self.paint_button=0;self.paint_lane=index;self.paint_last_step=step_index;self.paint_accent=false;self.paint_clear=false
           if self.paint_value then truncate_sustain_before(lane,step_index) end
           step.enabled=self.paint_value;step.cut=false;step.accent=false
           if not self.paint_value then step.pitch_semitones=0;step.pitch_cents=0;step.gate=100 end
@@ -2419,7 +2434,7 @@ function UI:sequence_grid(height)
     -- boundary, even when SetNextWindowContentSize already declares it.
     r.ImGui_SetCursorPosX(c,r.ImGui_SetNextWindowContentSize and 8 or virtual_width-1)
     r.ImGui_Dummy(c,1,1)
-    if self.paint_active and not r.ImGui_IsMouseDown(c,self.paint_button) then self.paint_active=false;self.paint_lane=false;self.paint_last_step=false;self.paint_accent=false end
+    if self.paint_active and not r.ImGui_IsMouseDown(c,self.paint_button) then self.paint_active=false;self.paint_lane=false;self.paint_last_step=false;self.paint_accent=false;self.paint_clear=false end
     if app.follow_cursor then
       local followed=self:lane_play_step(app:lane())
       if followed then app.selected_step=followed end
@@ -2896,11 +2911,11 @@ function UI:pads()
   local send_size=26
   r.ImGui_SameLine(c,0,5);r.ImGui_BeginGroup(c)
   local send_a=tonumber(controls.reverb_send) or 0
-  changed,value=self:knob("##padquicksenda","A",send_a,0,send_size,{minimum=0,maximum=1,wheel_step=.01,hide_label=true,inside_label="A",formatter=function(v)return string.format("%.0f%%",v*100)end,on_shift_click=function()app:show_track_fx_chain(app:aux_track("aux_a"))end,shift_hint="Shift-click: open AUX A FX chain"})
+  changed,value=self:knob("##padquicksenda","A",send_a,0,send_size,{minimum=0,maximum=1,wheel_step=.01,hide_label=true,inside_label="A",formatter=function(v)return string.format("%.0f%%",v*100)end,on_shift_click=function()app:show_aux_fx_chain("aux_a")end,shift_hint="Shift-click: open AUX A FX chain"})
   if changed then self:apply_selected_pad_controls({reverb_send=value}) end
   r.ImGui_SameLine(c,0,3)
   local send_b=tonumber(controls.delay_send) or 0
-  changed,value=self:knob("##padquicksendb","B",send_b,0,send_size,{minimum=0,maximum=1,wheel_step=.01,hide_label=true,inside_label="B",formatter=function(v)return string.format("%.0f%%",v*100)end,on_shift_click=function()app:show_track_fx_chain(app:aux_track("aux_b"))end,shift_hint="Shift-click: open AUX B FX chain"})
+  changed,value=self:knob("##padquicksendb","B",send_b,0,send_size,{minimum=0,maximum=1,wheel_step=.01,hide_label=true,inside_label="B",formatter=function(v)return string.format("%.0f%%",v*100)end,on_shift_click=function()app:show_aux_fx_chain("aux_b")end,shift_hint="Shift-click: open AUX B FX chain"})
   if changed then self:apply_selected_pad_controls({delay_send=value}) end
   r.ImGui_EndGroup(c)
   local choke=self:pad_choke_value(pad)
@@ -3129,6 +3144,7 @@ function UI:mixer_strip(index,width,height)
       return self.selected_pads[index] and #selected>0 and selected or {index}
     end
     local function set_control(key,value)
+      if key=="reverb_send"then app:ensure_aux_track("aux_a")elseif key=="delay_send"then app:ensure_aux_track("aux_b")end
       for _,target in ipairs(targets()) do
         local target_controls=app:pad(target).default_controls or {};app:pad(target).default_controls=target_controls
         target_controls[key]=value;self:queue_live_pad_controls(target)
@@ -3202,10 +3218,10 @@ function UI:mixer_strip(index,width,height)
     r.ImGui_Text(c,string.format("%.1f dB",20*math.log(math.max(.0001,(volume/.5)^2),10)))
     if show_sends then
       local reverb_send=controls.reverb_send or 0
-      changed,reverb_send=self:knob("##mixrev"..index,"A",reverb_send,0,30,{hide_label=true,inside_label="A",on_shift_click=function()app:show_track_fx_chain(app:aux_track("aux_a"))end,shift_hint="Shift-click: open AUX A FX chain"})
+      changed,reverb_send=self:knob("##mixrev"..index,"A",reverb_send,0,30,{hide_label=true,inside_label="A",on_shift_click=function()app:show_aux_fx_chain("aux_a")end,shift_hint="Shift-click: open AUX A FX chain"})
       if changed then set_control("reverb_send",reverb_send) end
       r.ImGui_SameLine(c);local delay_send=controls.delay_send or 0
-      changed,delay_send=self:knob("##mixdelay"..index,"B",delay_send,0,30,{hide_label=true,inside_label="B",on_shift_click=function()app:show_track_fx_chain(app:aux_track("aux_b"))end,shift_hint="Shift-click: open AUX B FX chain"})
+      changed,delay_send=self:knob("##mixdelay"..index,"B",delay_send,0,30,{hide_label=true,inside_label="B",on_shift_click=function()app:show_aux_fx_chain("aux_b")end,shift_hint="Shift-click: open AUX B FX chain"})
       if changed then set_control("delay_send",delay_send) end
     end
     -- Empty channel space is also a selection target. Interactive widgets keep
@@ -3343,15 +3359,17 @@ function UI:mixer_bus_strip(id,label,track,width,height,output)
     if self:button("M##busmute"..id,20,22,bus_muted and C.red or nil) then app:set_mixer_track_mute(track,not bus_muted) end
     if self:button("S##bussolo"..id,20,22,bus_soloed and C.accent or nil) then app:set_mixer_track_solo(track,not bus_soloed) end
     local fx_count=app:track_fx_count(track)
-    if self:button("FX##busfx"..id,20,22,fx_count>0 and C.selected or nil) then app:show_track_fx_chain(track) end
+    if self:button("FX##busfx"..id,20,22,fx_count>0 and C.selected or nil) then
+      if id=="aux_a"or id=="aux_b"then app:show_aux_fx_chain(id)else app:show_track_fx_chain(track)end
+    end
     self:tooltip(fx_count==0 and "Open empty FX chain" or ("Open FX chain ("..fx_count..")"))
     if output then
       -- Keep output sends in a low footer so their small knobs only cross the
       -- quiet bottom of the fader travel instead of its normal working range.
       r.ImGui_SetCursorPosY(c,math.max(r.ImGui_GetCursorPosY(c),height-66))
-      local send_a=output.aux_a_send or 0;changed,value=self:knob("##outauxa"..id,"A",send_a,0,20,{hide_label=true,inside_label="A",on_shift_click=function()app:show_track_fx_chain(app:aux_track("aux_a"))end,shift_hint="Shift-click: open AUX A FX chain"})
+      local send_a=output.aux_a_send or 0;changed,value=self:knob("##outauxa"..id,"A",send_a,0,20,{hide_label=true,inside_label="A",on_shift_click=function()app:show_aux_fx_chain("aux_a")end,shift_hint="Shift-click: open AUX A FX chain"})
       if changed then app:set_output_aux_send(output,"aux_a_send",value) end
-      local send_b=output.aux_b_send or 0;changed,value=self:knob("##outauxb"..id,"B",send_b,0,20,{hide_label=true,inside_label="B",on_shift_click=function()app:show_track_fx_chain(app:aux_track("aux_b"))end,shift_hint="Shift-click: open AUX B FX chain"})
+      local send_b=output.aux_b_send or 0;changed,value=self:knob("##outauxb"..id,"B",send_b,0,20,{hide_label=true,inside_label="B",on_shift_click=function()app:show_aux_fx_chain("aux_b")end,shift_hint="Shift-click: open AUX B FX chain"})
       if changed then app:set_output_aux_send(output,"aux_b_send",value) end
     end
     r.ImGui_EndGroup(c)

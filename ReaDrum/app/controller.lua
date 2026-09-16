@@ -937,7 +937,6 @@ function Controller:poll_sampler_loads(limit)
   -- deleted; unchanged frames stay O(1) instead of rescanning the project.
   self:refresh_track_cache(false)
   local complete=self:find_track("folder",self.rack.id.."/folder") and self:find_track("dry") and self:find_track("sequencer")
-    and self:find_track("aux","aux_a") and self:find_track("aux","aux_b")
   local banks,outputs={},{main=true}
   for _,pad in ipairs(self.rack.pads or {}) do
     if pad.sample~=false and pad.sample~=nil then
@@ -1784,6 +1783,20 @@ end
 function Controller:pad_track(index) return self:find_track("pad", self:pad(index).id) end
 function Controller:output_track(id) return self:find_track("output",id) end
 function Controller:aux_track(id) return self:find_track("aux",id) end
+function Controller:ensure_aux_track(id)
+  if id~="aux_a"and id~="aux_b"then return nil end
+  self:refresh_track_cache(false)
+  local track=self:aux_track(id);if track then return track end
+  local report=lifecycle.reconcile(self.adapter,self.rack,{engine="sampler_bank",sampler_cache=self.sampler_cache,ensure_aux={[id]=true},undo_label="ReaDrum: create "..(id=="aux_a"and"AUX A"or"AUX B")})
+  self.sampler_cache=report.sampler_cache or self.sampler_cache
+  self.bank_tracks=report.bank_tracks or self.bank_tracks
+  self:invalidate_track_cache()
+  return self:aux_track(id)
+end
+function Controller:show_aux_fx_chain(id)
+  local track=self:ensure_aux_track(id)
+  return track and self:show_track_fx_chain(track)or false
+end
 function Controller:active_outputs()
   local result={}
   for _,output in ipairs(self.rack.outputs or {}) do if self:output_track(output.id) then result[#result+1]=output end end
@@ -1791,11 +1804,13 @@ function Controller:active_outputs()
 end
 function Controller:set_output_aux_send(output,key,value)
   if not output or (key~="aux_a_send" and key~="aux_b_send") then return false end
+  local aux_id=key=="aux_a_send"and"aux_a"or"aux_b"
+  self:ensure_aux_track(aux_id)
   output[key]=math.max(0,math.min(1,tonumber(value)or 0))
   -- Keep output-send knobs audible during a drag. Structural reconciliation
   -- still creates or repairs missing sends after release.
   local source=self:output_track(output.id)
-  local destination=self:aux_track(key=="aux_a_send" and "aux_a" or "aux_b")
+  local destination=self:aux_track(aux_id)
   if source and destination then
     for send=0,self.adapter:send_count(source)-1 do
       if self.adapter:send_destination(source,send)==destination then

@@ -23,8 +23,8 @@ function Adapter:track_index(track)
   return math.floor(self.host.GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER") - 1)
 end
 
-function Adapter:insert_track(index)
-  self.host.InsertTrackAtIndex(index, false)
+function Adapter:insert_track(index, want_defaults)
+  self.host.InsertTrackAtIndex(index, want_defaults == true)
   return assert(self:track_at(index), "REAPER did not create the requested track")
 end
 
