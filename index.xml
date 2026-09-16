@@ -507,6 +507,50 @@ Rebuilds deleted managed engine tracks and safely reloads rebound banks.]]></cha
         <source type="effect" file="ReaDrum/ReaDrum_SamplerBank16.jsfx">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/b65e02ed0c9ab3aabd95d27d65153cc4964b76cc/ReaDrum/Effects/ReaDrum_SamplerBank16.jsfx</source>
         <source type="effect" file="ReaDrum/ReaDrum_SendFX.jsfx">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/b65e02ed0c9ab3aabd95d27d65153cc4964b76cc/ReaDrum/Effects/ReaDrum_SendFX.jsfx</source>
       </version>
+      <version name="0.1.13" author="davvolinni-ui" time="2026-09-16T23:13:10Z">
+        <changelog><![CDATA[Pad audition works independently of MIDI-track arm and monitoring.
+Creates AUX buses when used, and respects MIDI-track defaults.
+Adds Ctrl-drag step clearing and tighter MIDI pad focus.]]></changelog>
+        <source main="main">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/ReaDrum.lua</source>
+        <source file="EULA.md">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/EULA.md</source>
+        <source file="THIRD_PARTY_NOTICES.md">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/THIRD_PARTY_NOTICES.md</source>
+        <source file="app/bridge.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/app/bridge.lua</source>
+        <source file="app/controller.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/app/controller.lua</source>
+        <source file="app/eula.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/app/eula.lua</source>
+        <source file="app/state.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/app/state.lua</source>
+        <source file="app/theme.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/app/theme.lua</source>
+        <source file="app/ui.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/app/ui.lua</source>
+        <source file="core/clipboard.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/core/clipboard.lua</source>
+        <source file="core/commands.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/core/commands.lua</source>
+        <source file="core/engine_allocator.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/core/engine_allocator.lua</source>
+        <source file="core/envelope.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/core/envelope.lua</source>
+        <source file="core/groove.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/core/groove.lua</source>
+        <source file="core/init.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/core/init.lua</source>
+        <source file="core/json.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/core/json.lua</source>
+        <source file="core/model.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/core/model.lua</source>
+        <source file="core/round_robin.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/core/round_robin.lua</source>
+        <source file="reaper/adapter.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/reaper/adapter.lua</source>
+        <source file="reaper/diagnostic_inventory.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/reaper/diagnostic_inventory.lua</source>
+        <source file="reaper/diagnostic_runner.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/reaper/diagnostic_runner.lua</source>
+        <source file="reaper/diagnostics.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/reaper/diagnostics.lua</source>
+        <source file="reaper/event_budget.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/reaper/event_budget.lua</source>
+        <source file="reaper/init.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/reaper/init.lua</source>
+        <source file="reaper/lifecycle.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/reaper/lifecycle.lua</source>
+        <source file="reaper/playback_capture.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/reaper/playback_capture.lua</source>
+        <source file="reaper/rs5k.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/reaper/rs5k.lua</source>
+        <source file="reaper/sampler_bank.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/reaper/sampler_bank.lua</source>
+        <source file="reaper/sampler_engine.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/reaper/sampler_engine.lua</source>
+        <source file="reaper/scheduler_oracle.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/reaper/scheduler_oracle.lua</source>
+        <source file="reaper/snapshot.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/reaper/snapshot.lua</source>
+        <source file="reaper/snapshot_v2.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/reaper/snapshot_v2.lua</source>
+        <source file="reaper/tags.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/reaper/tags.lua</source>
+        <source file="reaper/transport_map.lua">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/reaper/transport_map.lua</source>
+        <source type="effect" file="ReaDrum/ReaDrum_GainLFO.jsfx">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/Effects/ReaDrum_GainLFO.jsfx</source>
+        <source type="effect" file="ReaDrum/ReaDrum_MasterSoftClipper.jsfx">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/Effects/ReaDrum_MasterSoftClipper.jsfx</source>
+        <source type="effect" file="ReaDrum/ReaDrum_RoundRobinDispatcher.jsfx">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/Effects/ReaDrum_RoundRobinDispatcher.jsfx</source>
+        <source type="effect" file="ReaDrum/ReaDrum_SamplerBank16.jsfx">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/Effects/ReaDrum_SamplerBank16.jsfx</source>
+        <source type="effect" file="ReaDrum/ReaDrum_SendFX.jsfx">https://raw.githubusercontent.com/davvolinni-ui/ReaDrumXT/e2648c74d155453dca34d56aa1869dd271acf7bb/ReaDrum/Effects/ReaDrum_SendFX.jsfx</source>
+      </version>
     </reapack>
   </category>
 </index>
