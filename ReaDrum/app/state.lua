@@ -2,7 +2,7 @@
 local json = require("ReaDrum.core.json")
 local model = require("ReaDrum.core.model")
 
-local M = { SECTION = "ReaDrum", VERSION = 1, CHUNK = 48000 }
+local M = { SECTION = "ReaDrum", VERSION = 2, CHUNK = 48000 }
 
 local DEFAULT_STEP=model.new_step()
 local function equal(a,b)
@@ -70,37 +70,84 @@ local function folder_track(host,project,rack_id)
   end
 end
 
-local function read_chunks(host,project)
-  local _,count_text=host.GetProjExtState(project,M.SECTION,"chunks")
-  local count=tonumber(count_text);local source="project"
-  local folder
-  if not count or count<1 or count>256 then
-    folder=folder_track(host,project)
-    if folder then local _,value=host.GetSetMediaTrackInfo_String(folder,"P_EXT:ReaDrum.state_chunks","",false);count=tonumber(value);source="folder" end
+local function state_get(host,project,folder,key)
+  if folder then
+    local _,value=host.GetSetMediaTrackInfo_String(folder,"P_EXT:ReaDrum."..key,"",false)
+    return value or ""
   end
-  if not count or count<1 or count>256 then return nil end
+  local _,value=host.GetProjExtState(project,M.SECTION,key)
+  return value or ""
+end
+
+local function checksum(payload)
+  local hash=2166136261
+  for index=1,#payload do hash=((hash ~ payload:byte(index))*16777619)&0xffffffff end
+  return string.format("%08x",hash)
+end
+
+local function read_chunks(host,project,folder)
+  local head=state_get(host,project,folder,"state_head")
+  local slot,count,bytes,digest=head:match("^([ab]):(%d+):(%d+):(%x+)$")
+  if head~="" and not slot then return nil,"Project state has invalid commit metadata" end
+  local count_text=count or state_get(host,project,folder,folder and "state_chunks" or "chunks")
+  count=tonumber(count_text)
+  if not count then
+    if count_text~="" then return nil,"Project state has an invalid chunk count" end
+    return nil
+  end
+  if count%1~=0 or count<1 or count>256 then return nil,"Project state has an invalid chunk count" end
   local chunks={}
   for index=1,count do
-    local value,ok
-    if source=="project" then ok,value=host.GetProjExtState(project,M.SECTION,string.format("state_%03d",index));ok=ok~=0
-    else ok,value=host.GetSetMediaTrackInfo_String(folder,string.format("P_EXT:ReaDrum.state_%03d",index),"",false) end
-    if not ok or value=="" then return nil,"Project state is incomplete" end
+    local key=slot and string.format("state_%s_%03d",slot,index) or string.format("state_%03d",index)
+    local value=state_get(host,project,folder,key)
+    if value=="" then return nil,"Project state is incomplete" end
     chunks[index]=value
   end
-  return table.concat(chunks),nil,source
+  local payload=table.concat(chunks)
+  if slot and (#payload~=tonumber(bytes) or checksum(payload)~=digest) then
+    return nil,"Project state failed its integrity check"
+  end
+  return payload
+end
+
+function M.signature(host,project)
+  local head=state_get(host,project,nil,"state_head")
+  if head~="" then return head end
+  local count=tonumber(state_get(host,project,nil,"chunks"))
+  if count and count%1==0 and count>=1 and count<=256 then
+    return tostring(count)..":"..state_get(host,project,nil,"state_001")..":"..
+      state_get(host,project,nil,string.format("state_%03d",count))
+  end
+  local folder=folder_track(host,project)
+  if folder then
+    head=state_get(host,project,folder,"state_head")
+    if head~="" then return "folder:"..head end
+    count=tonumber(state_get(host,project,folder,"state_chunks"))
+    if count and count%1==0 and count>=1 and count<=256 then
+      return "folder:"..tostring(count)..":"..state_get(host,project,folder,"state_001")..":"..
+        state_get(host,project,folder,string.format("state_%03d",count))
+    end
+  end
 end
 
 local function filename(path)
   return tostring(path or ""):match("([^/\\]+)$") or "Empty"
 end
 
-function M.new_rack()
+function M.default_fader_db(host)
+  local db=tonumber(host and host.GetExtState and host.GetExtState("ReaDrum5k","default_fader_db"))
+  return (db==-3 or db==0) and db or -6
+end
+
+function M.new_rack(default_db)
+  -- Keep the historical value for unchanged preferences and legacy projects.
+  local volume=default_db==0 and .5 or default_db==-3 and .5*10^(-3/40) or .354
   local ids = model.new_id_factory("readrum")
   local pads, lanes = {}, {}
   for index = 1, 128 do
     local pad = model.new_pad({ logical_index = index, name = string.format("Pad %03d", index), sample = false,
       default_controls = { playback_mode = "one_shot", gate_release_ms = 10, envelope_enabled = false, legato_enabled = true, slide_retrigger = true, slide_crossfade_ms = 20,
-        envelope_mode = "ahd", envelope_layout_version = 2, hold = 0, fade_in = 0, fade_out = 0, volume = 0.354 },
+        envelope_mode = "ahd", envelope_layout_version = 2, hold = 0, fade_in = 0, fade_out = 0, volume = volume },
     }, ids)
     pads[index] = pad
     lanes[index] = model.new_lane({
@@ -160,11 +207,9 @@ function M.new_variation(pads, name, source, prefix)
     swing=source and source.swing or 0, groove=source and model.deep_copy(source.groove) or nil, velocity_humanize=source and source.velocity_humanize or 0, timing_humanize=source and source.timing_humanize or 0, pitch_humanize=source and source.pitch_humanize or 0, pan_humanize=source and source.pan_humanize or 0 }, ids)
 end
 
-function M.load(host, project)
-  local payload,read_error,source=read_chunks(host,project)
-  if not payload then return M.new_rack(),false,read_error end
-  local ok, rack = pcall(json.decode,payload)
-  if not ok then return M.new_rack(), false, "Project state could not be decoded: " .. tostring(rack) end
+local function decode_rack(payload)
+  local rack=json.decode(payload)
+  assert(type(rack)=="table","Project state must contain a rack")
   if rack._readrum_sparse_state then rack=M.expand(rack) end
   -- Logical outputs are independent of sampler bank locations. Older RS5K
   -- projects implicitly used the main output, so upgrade them losslessly.
@@ -247,39 +292,35 @@ function M.load(host, project)
     if step.slide==nil then step.slide=false end
   end end end end
   local valid, failure = model.validate_rack(rack)
-  if not valid then return M.new_rack(), false, "Project state is invalid: " .. tostring(failure) end
-  return rack,true,source=="folder" and "Recovered ReaDrum state from its folder track" or nil
+  assert(valid,"Project state is invalid: "..tostring(failure))
+  return rack
 end
 
-function M.save(host, project, rack)
-  model.assert_valid(rack)
-  local payload = json.encode(M.compact(rack))
-  local _, previous_text = host.GetProjExtState(project, M.SECTION, "chunks")
-  local previous = tonumber(previous_text) or 0
-  local count = math.max(1, math.ceil(#payload / M.CHUNK))
-  for index = 1, count do
-    host.SetProjExtState(project, M.SECTION, string.format("state_%03d", index), payload:sub((index - 1) * M.CHUNK + 1, index * M.CHUNK))
+function M.load(host,project)
+  local errors={}
+  local function attempt(folder)
+    local payload,failure=read_chunks(host,project,folder)
+    if payload then
+      local ok,rack=pcall(decode_rack,payload)
+      if ok then return rack end
+      failure=tostring(rack)
+    end
+    if failure then errors[#errors+1]=failure end
   end
-  for index = count + 1, previous do host.SetProjExtState(project, M.SECTION, string.format("state_%03d", index), "") end
-  host.SetProjExtState(project, M.SECTION, "version", tostring(M.VERSION))
-  host.SetProjExtState(project, M.SECTION, "chunks", tostring(count))
-  -- Redundant track-owned copy: survives with the ReaDrum rack even when a
-  -- host/save workflow omits project extension state.
-  local folder=folder_track(host,project,rack.id)
+  local rack=attempt(nil)
+  if rack then return rack,true end
+  local folder=folder_track(host,project)
   if folder then
-    local _,old_text=host.GetSetMediaTrackInfo_String(folder,"P_EXT:ReaDrum.state_chunks","",false);local old=tonumber(old_text) or 0
-    for index=1,count do host.GetSetMediaTrackInfo_String(folder,string.format("P_EXT:ReaDrum.state_%03d",index),payload:sub((index-1)*M.CHUNK+1,index*M.CHUNK),true) end
-    for index=count+1,old do host.GetSetMediaTrackInfo_String(folder,string.format("P_EXT:ReaDrum.state_%03d",index),"",true) end
-    host.GetSetMediaTrackInfo_String(folder,"P_EXT:ReaDrum.state_version",tostring(M.VERSION),true)
-    host.GetSetMediaTrackInfo_String(folder,"P_EXT:ReaDrum.state_chunks",tostring(count),true)
+    rack=attempt(folder)
+    if rack then return rack,true,"Recovered ReaDrum state from its folder track" end
   end
-  host.MarkProjectDirty(project)
-  return #payload
+  -- Never reconcile/save a blank rack over an existing but unreadable kit.
+  if #errors>0 then error(table.concat(errors,"; ")..". Saved ReaDrum state was left intact.",2) end
+  return M.new_rack(M.default_fader_db(host)),false
 end
 
--- Prepare the expensive serialization once, then let the UI distribute host
--- ext-state writes across frames. Metadata is committed last so a completed
--- incremental job has the same on-disk contract as M.save.
+-- Encode and stage into the inactive slot across frames. Only state_head
+-- makes those chunks visible; cancellation never touches the committed slot.
 function M.begin_save(host,project,rack,probe,compact)
   -- Normal UI edits reuse the already completed asynchronous undo checkpoint.
   -- Callers without one retain the old synchronous fallback for compatibility.
@@ -289,30 +330,46 @@ end
 
 local function prepare_save_operations(task,payload)
   local host,project=task.host,task.project
-  local _,previous_text=host.GetProjExtState(project,M.SECTION,"chunks")
-  local previous=tonumber(previous_text) or 0
   local count=math.max(1,math.ceil(#payload/M.CHUNK))
-  local folder=folder_track(host,project,task.rack_id);local old=0
-  if folder then local _,old_text=host.GetSetMediaTrackInfo_String(folder,"P_EXT:ReaDrum.state_chunks","",false);old=tonumber(old_text) or 0 end
+  assert(count<=256,"ReaDrum state exceeds the project storage capacity")
+  local folder=folder_track(host,project,task.rack_id)
+  local head=state_get(host,project,nil,"state_head")
+  local slot=head:sub(1,1)=="a" and "b" or "a"
+  local folder_head=folder and state_get(host,project,folder,"state_head") or ""
+  local folder_slot=folder_head:sub(1,1)=="a" and "b" or "a"
+  local suffix=string.format(":%d:%d:%s",count,#payload,checksum(payload))
   local operations={}
   for index=1,count do
     local chunk=payload:sub((index-1)*M.CHUNK+1,index*M.CHUNK)
-    operations[#operations+1]={"project",string.format("state_%03d",index),chunk}
-    if folder then operations[#operations+1]={"track",string.format("P_EXT:ReaDrum.state_%03d",index),chunk} end
+    operations[#operations+1]={"project",string.format("state_%s_%03d",slot,index),chunk}
+    if folder then operations[#operations+1]={"track",string.format("P_EXT:ReaDrum.state_%s_%03d",folder_slot,index),chunk} end
   end
-  for index=count+1,previous do operations[#operations+1]={"project",string.format("state_%03d",index),""} end
-  if folder then for index=count+1,old do operations[#operations+1]={"track",string.format("P_EXT:ReaDrum.state_%03d",index),""} end end
-  operations[#operations+1]={"project","version",tostring(M.VERSION)}
-  operations[#operations+1]={"project","chunks",tostring(count)}
-  if folder then
-    operations[#operations+1]={"track","P_EXT:ReaDrum.state_version",tostring(M.VERSION)}
-    operations[#operations+1]={"track","P_EXT:ReaDrum.state_chunks",tostring(count)}
-  end
+  task.head,task.folder_head=slot..suffix,folder_slot..suffix
   task.folder,task.operations,task.index,task.bytes=folder,operations,1,#payload
   task.phase="write"
 end
 
+local function commit_save(task)
+  -- Publish both complete copies in the same defer cycle.
+  if task.folder then
+    assert(task.host.GetSetMediaTrackInfo_String(task.folder,"P_EXT:ReaDrum.state_head",task.folder_head,true),"Could not commit track state")
+  end
+  assert(task.host.SetProjExtState(task.project,M.SECTION,"state_head",task.head)>0,"Could not commit project state")
+  task.host.MarkProjectDirty(task.project)
+  task.phase="done"
+  return true,task.bytes
+end
+
+function M.save(host,project,rack)
+  model.assert_valid(rack)
+  local task={host=host,project=project,rack_id=rack.id}
+  prepare_save_operations(task,json.encode(M.compact(rack)))
+  M.step_save(task,#task.operations)
+  return task.bytes
+end
+
 function M.step_save(task,budget)
+  if task.phase=="done" then return true,task.bytes end
   if task.phase=="encode"then
     local complete,payload=json.step_encode(task.encode)
     if not complete then return false end
@@ -322,12 +379,12 @@ function M.step_save(task,budget)
   budget=math.max(1,math.floor(budget or 1))
   for _=1,budget do
     local operation=task.operations[task.index]
-    if not operation then task.host.MarkProjectDirty(task.project);return true,task.bytes end
-    if operation[1]=="project" then task.host.SetProjExtState(task.project,M.SECTION,operation[2],operation[3])
-    else task.host.GetSetMediaTrackInfo_String(task.folder,operation[2],operation[3],true) end
+    if not operation then return commit_save(task) end
+    if operation[1]=="project" then assert(task.host.SetProjExtState(task.project,M.SECTION,operation[2],operation[3])>0,"Could not stage project state")
+    else assert(task.host.GetSetMediaTrackInfo_String(task.folder,operation[2],operation[3],true),"Could not stage track state") end
     task.index=task.index+1
   end
-  if task.index>#task.operations then task.host.MarkProjectDirty(task.project);return true,task.bytes end
+  if task.index>#task.operations then return commit_save(task) end
   return false
 end
 

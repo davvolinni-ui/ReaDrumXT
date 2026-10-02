@@ -118,6 +118,7 @@ SLIDE_OFFSET=35300;
 LIVE_OFFSET=35400;
 AUDITION_OFFSET=35500;
 ENVELOPE_OFFSET=35600;
+SESSION_OFFSET=35664;
 
 SLOTS=16;
 MAX_VOICES=256;
@@ -143,6 +144,10 @@ FILTER_TYPE=10000;FILTER_B0=10256;FILTER_B1=10512;FILTER_B2=10768;FILTER_A1=1102
 FILTER_ZL1=11536;FILTER_ZL2=11792;FILTER_ZR1=12048;FILTER_ZR2=12304;
 VOICE_CUTOFF=13000;VOICE_RESONANCE=13256;VOICE_DRIVE=13512;
 PENDING_CUTOFF=13800;PENDING_RESONANCE=13816;PENDING_DRIVE=13832;
+RESTORE_LOAD=13900;
+CONTROL_STAGE=14000;
+SER_CONTROLS=15000;
+SAMPLE_PATH_STRING=100;
 memset(PENDING_CUTOFF,-1,16);memset(PENDING_RESONANCE,-1,16);memset(PENDING_DRIVE,-1,16);
 
 // Two fixed buffers per pad allow the loader to fill an inactive region and
@@ -444,16 +449,40 @@ function refresh_slot_voices(slot)local(v,b,c,rate,a,d,sus,stage,env,remaining)(
 // function-local; global names such as channels/frames/slot were previously
 // overwritten by the audio thread during a reload, committing INF frames and
 // zero channels into otherwise valid samples.
-function process_load(load_slot)local(command_base,command,op,path_len,status,items,channels,frames,handle,requested_rate,inactive,target,available,path_i,status_base)(
+function mailbox_owned()(gmem[bank_base+SESSION_OFFSET]==capture_id;);
+// Copy a complete path before opening a file. Recheck the commit because
+// Lua can replace a request while the idle thread is copying its bytes.
+function command_path(load_slot,destination)local(cb,token,op,n,j,ok)(
+  cb=bank_base+load_slot*COMMAND_STRIDE;token=0;
+  mailbox_owned()&&gmem[cb]==MAGIC&&gmem[cb+1]==VERSION?(
+    token=gmem[cb+2];op=gmem[cb+3]|0;n=gmem[cb+5]|0;
+    ok=token>0&&(op==2||(op==1&&n>0&&n<=PATH_CAP));
+    ok?(
+      strcpy(destination,"");
+      op==1?(j=0;loop(n,str_setchar(destination,j,gmem[cb+PATH_OFFSET+j]|0);j+=1;);str_setchar(destination,n,0););
+      ok=mailbox_owned()&&gmem[cb]==MAGIC&&gmem[cb+2]==token;
+    );
+    !ok?token=0;
+  );token;
+);
+function process_load(load_slot)local(command_base,command,op,status,items,channels,frames,handle,requested_rate,inactive,target,available,status_base,binding,restoring,session)(
   command_base=bank_base+load_slot*COMMAND_STRIDE;
-  gmem[command_base]==MAGIC && gmem[command_base+1]==VERSION && gmem[command_base+2]!=META[meta(load_slot,8)] ? (
-    command=gmem[command_base+2];op=gmem[command_base+3]|0;path_len=gmem[command_base+5]|0;
+  command=command_path(load_slot,#load_path);restoring=0;binding=bank_base;session=capture_id;
+  command>0&&command!=META[meta(load_slot,8)] ? (
+    strcpy(SAMPLE_PATH_STRING+load_slot,#load_path);RESTORE_LOAD[load_slot]=0;
+  ):RESTORE_LOAD[load_slot]?(
+    strcpy(#load_path,SAMPLE_PATH_STRING+load_slot);command=16777215;restoring=1;
+  ):(command=0;);
+  command>0 ? (
+    op=strlen(#load_path)>0?1:2;
+    RESTORE_LOAD[load_slot]=0;
+    // A failed replacement must never leave the previous drum playable.
+    META[meta(load_slot,1)]=0;META[meta(load_slot,2)]=0;META[meta(load_slot,7)]=0;
     status=-1;items=0;channels=0;frames=0;
     op==2 ? (
       META[meta(load_slot,1)]=0;META[meta(load_slot,2)]=0;META[meta(load_slot,3)]=0;
       status=1;
-    ) : op==1&&path_len>0&&path_len<=PATH_CAP ? (
-      #load_path="";path_i=0;loop(path_len,str_setchar(#load_path,path_i,gmem[command_base+PATH_OFFSET+path_i]|0);path_i+=1;);str_setchar(#load_path,path_len,0);
+    ) : op==1 ? (
       handle=file_open(#load_path);
       handle>=0 ? (
         channels='rqsr';requested_rate=srate;file_riff(handle,channels,requested_rate);
@@ -465,7 +494,8 @@ function process_load(load_slot)local(command_base,command,op,path_len,status,it
           kill_region(load_slot,inactive);
           items=min(available,REGION_ITEMS);items=file_mem(handle,target,items);
           items==items&&items>0&&abs(items)<pow(10,100)?frames=floor(items/channels):frames=0;
-          frames>0&&frames<=REGION_ITEMS ? (
+          frames>0&&frames<=REGION_ITEMS&&binding==bank_base&&session==capture_id&&
+            (restoring||(mailbox_owned()&&gmem[command_base]==MAGIC&&gmem[command_base+2]==command)) ? (
             META[meta(load_slot,4)]=inactive;META[meta(load_slot,5)]=frames;META[meta(load_slot,6)]=channels;META[meta(load_slot,7)]=command;
             status=1;
           ) : status=-3;
@@ -473,9 +503,11 @@ function process_load(load_slot)local(command_base,command,op,path_len,status,it
         file_close(handle);
       ) : status=-2;
     );
-    status_base=bank_base+STATUS_OFFSET+load_slot*4;
-    gmem[status_base]=command;gmem[status_base+1]=status;gmem[status_base+2]=frames;gmem[status_base+3]=channels;
-    META[meta(load_slot,8)]=command;slider4=command;
+    !restoring&&binding==bank_base&&session==capture_id&&mailbox_owned()?(
+      status_base=bank_base+STATUS_OFFSET+load_slot*4;
+      gmem[status_base+1]=status;gmem[status_base+2]=frames;gmem[status_base+3]=channels;gmem[status_base]=command;
+      META[meta(load_slot,8)]=command;slider4=command;
+    );
   );
 );
 
@@ -501,6 +533,62 @@ bank_base!=active_bank_base ? (
   active_bank_base=bank_base;
 );
 
+@serialize
+ser_reading=file_avail(0)>=0;
+ser_magic=52461;ser_version=1;
+file_var(0,ser_magic);file_var(0,ser_version);
+ser_valid=ser_magic==52461&&ser_version==1;
+ser_reading?(
+  // Local saved state is sufficient to reopen without the Lua window. Never
+  // replay a command/audition from another session's shared memory.
+  capture_id=max(capture_id+1,floor(time_precise()*1000000));slider10=capture_id;
+  memset(META,0,SLOTS*META_WORDS);memset(RESTORE_LOAD,0,SLOTS);
+  ser_slot=0;loop(SLOTS,
+    reset_controls(ser_slot);strcpy(SAMPLE_PATH_STRING+ser_slot,"");
+    ser_valid?(
+      file_string(0,SAMPLE_PATH_STRING+ser_slot);
+      ser_valid=strlen(SAMPLE_PATH_STRING+ser_slot)<=PATH_CAP;
+      ser_count=file_mem(0,CTRL+ctrl(ser_slot,0),CTRL_WORDS);ser_valid=ser_valid&&ser_count==CTRL_WORDS;
+      file_var(0,ENVELOPE_MODE[ser_slot]);file_var(0,HOLD_SECONDS[ser_slot]);
+      file_var(0,AUDIBLE_TARGET[ser_slot]);file_var(0,SLIDE_RETRIGGER[ser_slot]);file_var(0,SLIDE_XFADE[ser_slot]);
+      AUDIBLE_GAIN[ser_slot]=AUDIBLE_TARGET[ser_slot];
+      CTRL[ctrl(ser_slot,0)]=-1;
+      RESTORE_LOAD[ser_slot]=strlen(SAMPLE_PATH_STRING+ser_slot)>0;
+    );
+    META[meta(ser_slot,8)]=-1;
+    LAST_AUDITION[ser_slot]=gmem[bank_base+AUDITION_OFFSET+ser_slot*4];
+    ser_slot+=1;
+  );
+  !ser_valid?(memset(RESTORE_LOAD,0,SLOTS);ser_slot=0;loop(SLOTS,strcpy(SAMPLE_PATH_STRING+ser_slot,"");reset_controls(ser_slot);ser_slot+=1;););
+  v=0;loop(MAX_VOICES,VOICES[voice(v,0)]=0;v+=1;);active_voice_limit=0;
+):(
+  ser_slot=0;loop(SLOTS,
+    // A user can save before @gfx decodes the latest requested sample. Save
+    // that complete request, rather than the previous decoded drum.
+    ser_token=command_path(ser_slot,#saved_path);
+    ser_token<=0?strcpy(#saved_path,SAMPLE_PATH_STRING+ser_slot);
+    file_string(0,#saved_path);
+    ser_c=ctrl(ser_slot,0);memcpy(SER_CONTROLS,CTRL+ser_c,CTRL_WORDS);
+    ser_env=ENVELOPE_MODE[ser_slot];ser_hold=HOLD_SECONDS[ser_slot];ser_audible=AUDIBLE_TARGET[ser_slot];
+    ser_retrigger=SLIDE_RETRIGGER[ser_slot];ser_xfade=SLIDE_XFADE[ser_slot];
+    ser_src=bank_base+CONTROL_OFFSET+ser_slot*CONTROL_WORDS;ser_revision=gmem[ser_src];
+    mailbox_owned()&&ser_revision>0?(
+      ser_j=0;loop(CTRL_WORDS,SER_CONTROLS[ser_j]=gmem[ser_src+ser_j];ser_j+=1;);
+      ser_env=gmem[bank_base+ENVELOPE_OFFSET+ser_slot*2];ser_hold=gmem[bank_base+ENVELOPE_OFFSET+ser_slot*2+1];
+      ser_audible=gmem[bank_base+AUDIO_MASK_OFFSET+ser_slot]==1?0:1;
+      ser_retrigger=gmem[bank_base+SLIDE_OFFSET+ser_slot*2];ser_xfade=gmem[bank_base+SLIDE_OFFSET+ser_slot*2+1];
+      gmem[ser_src]!=ser_revision||!mailbox_owned()?(
+        memcpy(SER_CONTROLS,CTRL+ser_c,CTRL_WORDS);
+        ser_env=ENVELOPE_MODE[ser_slot];ser_hold=HOLD_SECONDS[ser_slot];ser_audible=AUDIBLE_TARGET[ser_slot];
+        ser_retrigger=SLIDE_RETRIGGER[ser_slot];ser_xfade=SLIDE_XFADE[ser_slot];
+      );
+    );
+    file_mem(0,SER_CONTROLS,CTRL_WORDS);file_var(0,ser_env);file_var(0,ser_hold);
+    file_var(0,ser_audible);file_var(0,ser_retrigger);file_var(0,ser_xfade);
+    ser_slot+=1;
+  );
+);
+
 @gfx 1 1
 slider3=(slider3%16777214)+1;
 // Each slot owns a command mailbox, so restoring a complete bank cannot
@@ -514,29 +602,30 @@ diagnostic_active=0;diagnostic_v=0;loop(active_voice_limit,VOICES[voice(diagnost
 // Apply per-slot controls by revision, then commit completed inactive buffers.
 i=0;loop(SLOTS,
   src=bank_base+CONTROL_OFFSET+i*CONTROL_WORDS;revision=gmem[src];c=ctrl(i,0);
-  revision!=CTRL[c] ? (
-    j=0;loop(CTRL_WORDS,CTRL[c+j]=gmem[src+j];j+=1;);
-    env_src=bank_base+ENVELOPE_OFFSET+i*2;ENVELOPE_MODE[i]=gmem[env_src]|0;HOLD_SECONDS[i]=max(0,gmem[env_src+1]);
-    refresh_slot_voices(i);
-  ) : revision==0 ? (
-    // ext_noinit preserves local controls through a live source update. If
-    // the controller mailbox is absent, override any preserved legacy
-    // slot-per-output fallback so every pad reaches guaranteed Output 1.
-    CTRL[c+15]=0;
+  mailbox_owned()&&revision>0&&revision!=CTRL[c] ? (
+    j=0;loop(CTRL_WORDS,CONTROL_STAGE[j]=gmem[src+j];j+=1;);
+    env_src=bank_base+ENVELOPE_OFFSET+i*2;stage_env=gmem[env_src];stage_hold=gmem[env_src+1];
+    stage_audible=gmem[bank_base+AUDIO_MASK_OFFSET+i]==1?0:1;
+    stage_retrigger=gmem[bank_base+SLIDE_OFFSET+i*2];stage_xfade=gmem[bank_base+SLIDE_OFFSET+i*2+1];
+    mailbox_owned()&&gmem[src]==revision?(
+      memcpy(CTRL+c,CONTROL_STAGE,CTRL_WORDS);
+      ENVELOPE_MODE[i]=stage_env|0;HOLD_SECONDS[i]=max(0,stage_hold);
+      stage_audible!=AUDIBLE_TARGET[i]?mask_ramp_active=1;AUDIBLE_TARGET[i]=stage_audible;
+      SLIDE_RETRIGGER[i]=stage_retrigger;SLIDE_XFADE[i]=max(0,min(.1,stage_xfade));
+      refresh_slot_voices(i);
+    );
   );
-  mask=gmem[bank_base+AUDIO_MASK_OFFSET+i];target=mask==1?0:1;
-  target!=AUDIBLE_TARGET[i]?mask_ramp_active=1;
-  AUDIBLE_TARGET[i]=target;
-  SLIDE_RETRIGGER[i]=gmem[bank_base+SLIDE_OFFSET+i*2];SLIDE_XFADE[i]=max(0,min(.1,gmem[bank_base+SLIDE_OFFSET+i*2+1]));
   META[meta(i,7)]!=0 && META[meta(i,7)]!=META[meta(i,3)] ? (
     META[meta(i,0)]=META[meta(i,4)];META[meta(i,1)]=META[meta(i,5)];META[meta(i,2)]=META[meta(i,6)];META[meta(i,3)]=META[meta(i,7)];META[meta(i,7)]=0;
   );
   // Publish the committed local slot state. The command status mailbox only
   // proves that a load once succeeded; this detects any later lost metadata.
-  gmem[bank_base+LIVE_OFFSET+i*3]=META[meta(i,1)];gmem[bank_base+LIVE_OFFSET+i*3+1]=META[meta(i,2)];gmem[bank_base+LIVE_OFFSET+i*3+2]=META[meta(i,3)];
-  audition_base=bank_base+AUDITION_OFFSET+i*4;audition_token=gmem[audition_base];
-  audition_token!=LAST_AUDITION[i]?(LAST_AUDITION[i]=audition_token;audition_op=gmem[audition_base+3]|0;audition_op==1?start_voice(i,gmem[audition_base+1]|0,gmem[audition_base+2]|0):audition_op==2?release_slot(i,.005););
-  gmem[bank_base+METER_OFFSET+i*2]=SLOT_PEAK_L[i];gmem[bank_base+METER_OFFSET+i*2+1]=SLOT_PEAK_R[i];SLOT_PEAK_L[i]=0;SLOT_PEAK_R[i]=0;
+  mailbox_owned()?(
+    gmem[bank_base+LIVE_OFFSET+i*3]=META[meta(i,1)];gmem[bank_base+LIVE_OFFSET+i*3+1]=META[meta(i,2)];gmem[bank_base+LIVE_OFFSET+i*3+2]=META[meta(i,3)];
+    audition_base=bank_base+AUDITION_OFFSET+i*4;audition_token=gmem[audition_base];
+    audition_token!=LAST_AUDITION[i]?(LAST_AUDITION[i]=audition_token;audition_op=gmem[audition_base+3]|0;audition_op==1?start_voice(i,gmem[audition_base+1]|0,gmem[audition_base+2]|0):audition_op==2?release_slot(i,.005););
+    gmem[bank_base+METER_OFFSET+i*2]=SLOT_PEAK_L[i];gmem[bank_base+METER_OFFSET+i*2+1]=SLOT_PEAK_R[i];
+  );SLOT_PEAK_L[i]=0;SLOT_PEAK_R[i]=0;
   i+=1;
 );
 

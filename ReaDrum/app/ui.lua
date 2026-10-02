@@ -1693,6 +1693,15 @@ function UI:top_toolbar()
       if r.ImGui_BeginTabBar(c,"##preferences_tabs")then
         if r.ImGui_BeginTabItem(c,"General")then
           self.preferences_tab="general"
+          r.ImGui_Text(c,"Default pad fader level")
+          r.ImGui_SetNextItemWidth(c,190)
+          local default_db=state.default_fader_db(r)
+          local fader_choice=default_db==0 and 2 or default_db==-3 and 1 or 0
+          local fader_changed,fader_value=r.ImGui_Combo(c,"##default_fader_db",fader_choice,table.concat({"-6 dB (factory default)","-3 dB","0 dB"},"\0").."\0\0",3)
+          if fader_changed and r.SetExtState then
+            r.SetExtState("ReaDrum5k","default_fader_db",tostring(({-6,-3,0})[fader_value+1]),true)
+          end
+          r.ImGui_TextDisabled(c,"Applies to new racks. Existing projects and kits keep their levels.")
           local changed,value=r.ImGui_Checkbox(c,"Show tooltips",self.tooltips_enabled~=false)
           if changed then self.tooltips_enabled=value;if r.SetExtState then r.SetExtState("ReaDrum5k","show_tooltips",value and "1" or "0",true)end end
           changed,value=r.ImGui_Checkbox(c,"Apply pad colors to REAPER tracks",self.track_colors_enabled==true)

@@ -1,10 +1,10 @@
 -- @description ReaDrumXT - Drum Sampler and Polymetric Step Sequencer
--- @version 0.1.13
+-- @version 0.1.14
 -- @author davvolinni-ui
 -- @changelog
---   Pad audition works independently of MIDI-track arm and monitoring.
---   Creates AUX buses when used, and respects MIDI-track defaults.
---   Adds Ctrl-drag step clearing and tighter MIDI pad focus.
+--   Improves project save integrity and sampler recovery after reopening.
+--   Isolates open project engines and preserves enclosing track folders.
+--   Adds a default pad fader level preference for new racks.
 -- @link
 --   Support https://forum.cockos.com/showthread.php?t=310870
 --   Repository https://github.com/davvolinni-ui/ReaDrumXT
@@ -21,6 +21,7 @@ local scripts = assert(source:match("^(.*)[/\\]ReaDrum[/\\]ReaDrum%.lua$"), "Rea
 package.path = scripts .. "/?.lua;" .. scripts .. "/?/init.lua;" .. package.path
 
 local Controller = require("ReaDrum.app.controller")
+local State = require("ReaDrum.app.state")
 local UI = require("ReaDrum.app.ui")
 local EULA = require("ReaDrum.app.eula")
 
@@ -73,8 +74,7 @@ local function launch()
   -- loading.  Initializing in that gap creates a second rack.  Unsaved/new
   -- projects start immediately; saved projects get a short state-load grace.
   local project,project_path=reaper.EnumProjects(-1,"")
-  local _,chunks=reaper.GetProjExtState(project,"ReaDrum","chunks")
-  if project_path and project_path~="" and not tonumber(chunks) and reaper.time_precise()-launch_started<5 then
+  if project_path and project_path~="" and not State.signature(reaper,project) and reaper.time_precise()-launch_started<5 then
     reaper.defer(launch);return
   end
 
@@ -92,16 +92,10 @@ local function launch()
     return reaper.GetProjectStateChangeCount and reaper.GetProjectStateChangeCount(bound_project) or 0
   end
   local function project_has_readrum_state(bound_project)
-    local _,chunks=reaper.GetProjExtState(bound_project,"ReaDrum","chunks")
-    return tonumber(chunks)~=nil
+    return State.signature(reaper,bound_project)~=nil
   end
   local function project_state_signature(bound_project)
-    local _,chunks=reaper.GetProjExtState(bound_project,"ReaDrum","chunks")
-    local count=tonumber(chunks)
-    if not count then return nil end
-    local _,first=reaper.GetProjExtState(bound_project,"ReaDrum","state_001")
-    local _,last=reaper.GetProjExtState(bound_project,"ReaDrum",string.format("state_%03d",count))
-    return tostring(count)..":"..tostring(#first)..":"..first..":"..tostring(#last)..":"..last
+    return State.signature(reaper,bound_project)
   end
   local controllers={[project]={app=app,guid=project_guid(project),change_count=project_change_count(project),state_signature=project_state_signature(project)}}
   local current_project,current_app,current_guid=project,app,project_guid(project)
@@ -123,7 +117,8 @@ local function launch()
     closed=true
     local active=reaper.EnumProjects(-1,"")
     for bound_project,binding in pairs(controllers) do
-      if project_is_open(bound_project) and project_guid(bound_project)==binding.guid then
+      if project_is_open(bound_project) and project_guid(bound_project)==binding.guid and
+        project_state_signature(bound_project)==binding.state_signature then
         if bound_project==active then pcall(function()binding.app:close()end)
         else pcall(function()binding.app:save_state_only()end) end
       end
@@ -190,9 +185,15 @@ local function launch()
       if not project_replaced and project_is_open(current_project) and project_guid(current_project)==current_guid then
         ui:flush_audition(true)
         pcall(function()current_app:save_state_only()end)
+        local previous_binding=controllers[current_project]
+        if previous_binding then
+          previous_binding.state_signature=project_state_signature(current_project)
+          previous_binding.change_count=project_change_count(current_project)
+        end
       else controllers[current_project]=nil end
       local binding=controllers[active_project]
-      if binding and (binding.guid~=active_guid or active_change_count<binding.change_count) then binding=nil;controllers[active_project]=nil end
+      if binding and (binding.guid~=active_guid or active_change_count<binding.change_count or
+        (active_state_signature and active_state_signature~=binding.state_signature)) then binding=nil;controllers[active_project]=nil end
       if not binding then
         local made,next_or_error=xpcall(function()return Controller.new(reaper,active_project)end,debug.traceback)
         if not made then close();report_error("ReaDrum could not initialize the active project",next_or_error);return end

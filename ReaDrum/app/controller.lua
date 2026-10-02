@@ -24,16 +24,48 @@ local clipper_reloaded=setmetatable({},{__mode="k"})
 -- an older, same-scope clipboard cached by the destination controller.
 local shared_clipboard_envelope,shared_clipboard_json
 
+local namespace_bindings={}
 local function engine_namespace(host,project)
   local text=host.GetProjectGUID and host.GetProjectGUID(project) or tostring(project or 0)
   local hash=2166136261
   for index=1,#text do hash=(hash ~ text:byte(index))*16777619 & 0xffffffff end
-  -- One namespace owns all eight sampler banks. Named JSFX gmem contains
-  -- 8,388,608 entries, so eight namespaces fit; 64 would alias addresses.
-  return hash%8
+  -- Hashing alone aliases unrelated projects one time in eight. Reserve an
+  -- unused namespace across open projects, including banks without a UI.
+  local occupied,open={},{[project]=true}
+  if host.EnumProjects then
+    local index=0
+    while true do
+      local other=host.EnumProjects(index,"");if not other then break end
+      open[other]=true
+      if other~=project then
+        if namespace_bindings[other]~=nil then occupied[namespace_bindings[other]]=true end
+        for track_index=0,host.CountTracks(other)-1 do
+          local track=host.GetTrack(other,track_index)
+          for fx=0,host.TrackFX_GetCount(track)-1 do
+            local ok,name=host.TrackFX_GetFXName(track,fx,"")
+            if ok and (name:find("ReaDrum Sampler Bank",1,true) or name:find("ReaDrum_SamplerBank16",1,true)) then
+              occupied[math.floor((host.TrackFX_GetParam(track,fx,4) or 0)+.5)]=true
+            end
+          end
+        end
+      end
+      index=index+1
+    end
+  end
+  for bound in pairs(namespace_bindings) do if not open[bound] then namespace_bindings[bound]=nil end end
+  local preferred=namespace_bindings[project] or hash%8
+  for offset=0,7 do
+    local candidate=(preferred+offset)%8
+    if not occupied[candidate] then namespace_bindings[project]=candidate;return candidate end
+  end
+  error("All eight ReaDrum project engine namespaces are in use; close an unused ReaDrum project")
 end
 
-local function snapshot_bases(_) return 0,300000 end
+local function snapshot_bases(rack)
+  -- Keep staging separate from UI counters and from other open projects.
+  local base=2000000+(rack.engine_namespace or 0)*300000
+  return base,base+270000
+end
 
 local function sample_name(pad)
   local sample=pad and pad.sample
@@ -247,6 +279,9 @@ function Controller:sync_engine_variation(track,fx)
   if not playing then self.engine_active_variation=self:active_variation_number();return self.engine_active_variation end
   track=track or self:find_track("sequencer");if not track or not self.host.TrackFX_GetParam then return self.engine_active_variation end
   fx=fx or self:dispatcher(track)
+  if not self.has_published or math.floor((self.host.TrackFX_GetParam(track,fx,34) or 0)+.5)~=self.revision then
+    return self.engine_active_variation
+  end
   local active=self.host.TrackFX_GetParam(track,fx,71);local pending=self.host.TrackFX_GetParam(track,fx,72);local observed=self.host.TrackFX_GetParam(track,fx,78)
   if type(active)=="number" and active>=1 and math.floor((pending or 0)+.5)==0 then
     if not self.variation_request_token or math.floor((observed or -1)+.5)==self.variation_request_token then self.engine_active_variation=math.floor(active+.5) end
@@ -719,6 +754,14 @@ function Controller:build_publish_payload(yield_hook)
 end
 
 function Controller:publish()
+  if not self.has_published then
+    local track=assert(self:find_track("sequencer"),"ReaDrum sequencer track is missing")
+    local fx=self:dispatcher(track)
+    local previous=self.host.TrackFX_GetParam and math.floor((self.host.TrackFX_GetParam(track,fx,33) or 0)+.5) or 0
+    -- A reopened project may already have revision 2. Reusing that commit
+    -- token would make @block ignore the authoritative model we just loaded.
+    self.revision=math.max(self.revision,previous)%16777214+1
+  end
   local track,fx,image,map=self:build_publish_payload()
   local runtime_base,map_base=snapshot_bases(self.rack)
   local accepted, analysis = snapshot.write_admitted_pair_fx(self.host, track, fx, image, map, {
@@ -730,6 +773,7 @@ function Controller:publish()
   local playback=self.rack.playback_mode=="rendered" and 0 or (self.rack.playback_mode=="events" and 2 or 1)
   self.host.TrackFX_SetParam(track,fx,66,playback)
   assert(accepted, type(analysis) == "table" and table.concat(analysis.reasons or {}, "; ") or tostring(analysis))
+  self.has_published=true
   self.status = "Engine revision " .. image.revision .. " published"
 end
 
@@ -1021,6 +1065,7 @@ function Controller:sync_pad_track_names(filter)
 end
 
 function Controller:save_if_due(force)
+  if force and self.dirty then return self:flush(true) end
   if not self.state_pending or (not force and self.host.time_precise()<(self.state_due or 0)) then return false end
   if force then
     self.state_save_task=nil;state.save(self.host,self.project,self.rack)
@@ -1065,14 +1110,6 @@ function Controller:flush(force,options)
     local stage_started=self.host.time_precise()
     self:sync_pending_pad_controls()
     self:probe("flush pad controls",stage_started)
-    if force then
-      self.state_save_task=nil;state.save(self.host,self.project,self.rack);self.state_pending=false;self.state_due=0
-    else
-      -- Rack serialization writes both project ext-state and its redundant
-      -- folder-track copy. Keep that work out of slider/click release frames;
-      -- repeated edits coalesce into one idle write. Ctrl+S forces it first.
-      self.state_pending=true;self.state_due=self.host.time_precise()+0.65
-    end
     if self.publish_dirty then
       stage_started=self.host.time_precise()
       self.revision = self.revision % 16777214 + 1
@@ -1084,6 +1121,12 @@ function Controller:flush(force,options)
       self.publish_task=nil;self.publish_build_task=nil;self.publish_awaiting_revision=nil;self:publish()
       self:probe("flush publish build",stage_started)
     end
+    -- A REAPER menu save/autosave does not pass through our Ctrl+S handler.
+    -- Commit persistence with the completed edit, after publishing its audio
+    -- state, so saving cannot capture a newer pattern and an older pad model.
+    -- Mouse gestures are already coalesced before reaching this boundary.
+    self.state_save_task=nil;state.save(self.host,self.project,self.rack)
+    self.state_pending=false;self.state_due=0
   end, debug.traceback)
   if ok then
     self.dirty, self.structural_dirty, self.publish_dirty = false, false, false;self.structural_pad_ids={};self.history_delete_empty_tracks=false
@@ -1401,6 +1444,7 @@ function Controller:load_kit()
   local ok,path=self.host.GetUserFileNameForRead("Load ReaDrum Kit","",".readrum");if not ok or path==""then return end
   local file,err=io.open(path,"rb");if not file then self.status="Could not load kit: "..tostring(err);return end;local raw=file:read("*a");file:close()
   local decoded;ok,decoded=pcall(json.decode,raw);if not ok then self.status="Invalid kit: "..tostring(decoded);return end;local valid,why=model.validate_rack(decoded);if not valid then self.status="Invalid kit: "..tostring(why);return end
+  decoded.engine_namespace=self.rack.engine_namespace
   self.undo_stack[#self.undo_stack+1]=state.compact(self.rack);self.rack=decoded;self.pattern_index=1;self.variation_index=1;self.selected_pad=1;self.selected_step=1;self.dirty=true;self.structural_dirty=true;self.publish_dirty=true;self.variation_events_dirty=true;self.structural_pad_ids={};self.due=0;self:flush(true);self.status="Kit loaded"
 end
 
@@ -2401,12 +2445,15 @@ function Controller:close()
 end
 
 function Controller:save_state_only()
+  if self.dirty then return self:flush(true) end
+  self.state_save_task=nil
   state.save(self.host,self.project,self.rack)
   self.state_pending=false;self.state_due=0
 end
 
 function Controller:restore_history(snapshot,target)
   local current=self.rack;local rack=state.expand(model.deep_copy(snapshot));local structural_ids={}
+  rack.engine_namespace=current.engine_namespace
   local audibility={}
   for _,pad in ipairs(current.pads or {}) do
     audibility[pad.id]={muted=pad.muted==true,soloed=pad.soloed==true}

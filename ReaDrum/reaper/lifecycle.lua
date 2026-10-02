@@ -108,13 +108,14 @@ local function create_track(adapter, spec, rack_id, report, found)
   end
   local prior=insertion>0 and adapter:track_at(insertion-1) or nil
   local prior_depth=prior and adapter:get_track_value(prior,"I_FOLDERDEPTH") or 0
+  local prior_tag=prior and tags.read_track(adapter,prior)
   -- The visible MIDI track should inherit the user's normal REAPER track
   -- defaults, including automatic record-arm and monitoring policy. Internal
   -- worker/output tracks remain deterministic infrastructure.
   local track = adapter:insert_track(insertion,spec.kind=="sequencer")
-  -- If the previous managed child closed the folder, transfer that closing
-  -- edge to the newly inserted output so it cannot appear outside the rack.
-  if prior and prior_depth<0 and (spec.kind=="sequencer" or spec.kind=="bank" or spec.kind=="output") then
+  -- Extend only this rack's own closing edge. An adjacent user track (or
+  -- another rack) may close a completely unrelated folder.
+  if prior_tag and prior_tag.rack_id==rack_id and prior_depth<0 and spec.kind~="folder" then
     adapter:set_track_value(prior,"I_FOLDERDEPTH",0)
     adapter:set_track_value(track,"I_FOLDERDEPTH",prior_depth)
   end
@@ -163,13 +164,23 @@ local function reconcile_folder_shape(adapter, rack, found, report, include_pad_
       return
     end
   end
+  -- The rack can itself be the last child of a user folder. Retain any
+  -- closing levels belonging to those ancestors when repairing our two
+  -- internal folders, without editing tracks outside this managed block.
+  local parent_depth,existing_delta=0,0
+  for index=0,first-1 do
+    parent_depth=math.max(0,parent_depth+adapter:get_track_value(adapter:track_at(index),"I_FOLDERDEPTH"))
+  end
+  for _,track in ipairs(ordered) do existing_delta=existing_delta+adapter:get_track_value(track,"I_FOLDERDEPTH") end
+  local ancestor_closures=math.min(parent_depth,math.max(0,-existing_delta))
   for index, track in ipairs(ordered) do
     local wanted=0
-    if index==1 or index==2 then
-      wanted=1
-    elseif index==dry_last or index==#ordered then
-      wanted=-1
-    end
+    if index==1 or index==2 then wanted=1 end
+    -- With no AUX returns, the same final child closes BOTH the Dry Bus
+    -- and the rack. Treating these as alternatives left the rack open and
+    -- swallowed following tracks every time the interface was reopened.
+    if index==dry_last then wanted=wanted-1 end
+    if index==#ordered then wanted=wanted-1-ancestor_closures end
     if adapter:get_track_value(track, "I_FOLDERDEPTH") ~= wanted then
       adapter:set_track_value(track, "I_FOLDERDEPTH", wanted)
       report.changed = true

@@ -120,7 +120,11 @@ end
 
 function M.ensure_bank(host, track, bank_index, namespace, hide_editor)
   local fx=M.find_bank(host, track, bank_index)
-  if fx==nil then return bank.add(host, track, bank_index, namespace) end
+  if fx==nil then
+    fx=bank.add(host,track,bank_index,namespace)
+    local reloaded=banks_reloaded[track]or{};banks_reloaded[track]=reloaded;reloaded[bank_index]=true
+    return fx,bank.bind(host,track,fx,bank_index,namespace)
+  end
   local reloaded=banks_reloaded[track]or{};banks_reloaded[track]=reloaded
   if not reloaded[bank_index] and host.TrackFX_SetOffline then
     reloaded[bank_index]=true;host.TrackFX_SetOffline(track,fx,true);host.TrackFX_SetOffline(track,fx,false)
@@ -138,7 +142,7 @@ function M.ensure_bank(host, track, bank_index, namespace, hide_editor)
     host.TrackFX_SetParamNormalized(track,fx,4,wanted_namespace/bank.MAX_NAMESPACE)
   end
   if hide_editor and host.TrackFX_Show then host.TrackFX_Show(track,fx,2) end
-  return fx
+  return fx,bank.bind(host,track,fx,bank_index,namespace)
 end
 
 function M.ensure_dispatcher(host, track)
@@ -212,7 +216,9 @@ function M.reconcile(host, track, rack, previous, bank_tracks)
     if type(path) == "string" and path ~= "" then
       local location = assert(pads.by_pad_id[pad.id])
       local prior=previous[pad.id]
+      local target_track=bank_tracks and bank_tracks[location.bank] or track
       local reuse=type(prior)=="table" and prior.path==path and prior.bank==location.bank
+        and prior.slot==location.slot and prior.namespace==namespace and prior.track==target_track
       local entry
       if reuse then
         entry=prior
@@ -222,7 +228,7 @@ function M.reconcile(host, track, rack, previous, bank_tracks)
       entry.signature=table.concat({path,entry.bank,entry.slot},"\0")
       entry.logical_bank,entry.logical_slot=location.bank,location.slot
       entry.namespace=namespace
-      entry.track=bank_tracks and bank_tracks[location.bank] or track
+      entry.track=target_track
       next_cache[pad.id]=entry
     end
   end
@@ -245,6 +251,12 @@ function M.reconcile(host, track, rack, previous, bank_tracks)
     end
   end
   local ensured = {}
+  for bank_number,worker in pairs(bank_tracks or {}) do
+    if M.find_bank(host,worker,bank_number-1)~=nil then
+      local _,bound=M.ensure_bank(host,worker,bank_number-1,namespace,true)
+      ensured[bank_number]={bound=bound}
+    end
+  end
   local any_solo=false
   for _,candidate in ipairs(rack.pads or {}) do if candidate.sample~=false and candidate.sample~=nil and candidate.soloed==true then any_solo=true;break end end
   for _, pad in ipairs(rack.pads) do
@@ -252,14 +264,15 @@ function M.reconcile(host, track, rack, previous, bank_tracks)
     if type(path) == "string" and path ~= "" then
       local location = assert(pads.by_pad_id[pad.id])
       if not ensured[location.bank] then
-        M.ensure_bank(host,(bank_tracks and bank_tracks[location.bank])or track,location.bank-1,namespace,true)
-        ensured[location.bank] = true
-        report.banks = report.banks + 1
+        local _,bound=M.ensure_bank(host,(bank_tracks and bank_tracks[location.bank])or track,location.bank-1,namespace,true)
+        ensured[location.bank] = {bound=bound}
       end
       local pair = assert(outputs.by_output_id[pad.output_id])
       local entry=next_cache[pad.id]
+      if ensured[location.bank].bound then entry.needs_load=true;entry.ready=false end
       local audible=pad.muted~=true and(not any_solo or pad.soloed==true)
-      bank.publish_controls(host, location.bank - 1, location.slot - 1, M.controls_from_pad(pad, pair,entry.slot-1,audible),namespace)
+      entry.controls=M.controls_from_pad(pad,pair,entry.slot-1,audible)
+      bank.publish_controls(host,location.bank-1,location.slot-1,entry.controls,namespace)
       report.controls = report.controls + 1
       if entry.needs_load then
         entry.token=bank.load(host, location.bank - 1, location.slot - 1, path,namespace)
@@ -268,6 +281,17 @@ function M.reconcile(host, track, rack, previous, bank_tracks)
         entry.needs_load=nil
         entry.requested_at=host.time_precise and host.time_precise() or 0
         report.loads = report.loads + 1
+      end
+    end
+  end
+  -- Empty pads must also erase restored slots and controls. A fresh Lua
+  -- cache has no previous entries with which to discover those stale slots.
+  for bank_number in pairs(ensured) do
+    report.banks=report.banks+1
+    for slot=1,16 do
+      if not occupied[bank_number..":"..slot] then
+        bank.clear(host,bank_number-1,slot-1,namespace)
+        bank.publish_controls(host,bank_number-1,slot-1,{gain=0,audible=false,output_pair=0},namespace)
       end
     end
   end
@@ -285,6 +309,29 @@ function M.poll(host, track, cache, limit)
   for pad_id,entry in pairs(cache or {}) do
     local bank_track=type(entry)=="table" and (entry.track or track) or nil
     local track_valid=bank_track~=nil and (not host.ValidatePtr or host.ValidatePtr(bank_track,"MediaTrack*"))
+    if type(entry)=="table" and track_valid and not rebound[entry.bank] then
+      local _,bound=M.ensure_bank(host,bank_track,entry.bank-1,entry.namespace,false)
+      rebound[entry.bank]=true
+      if bound then
+        -- A late compile/restore creates a new FX session. Its old mailbox was
+        -- discarded; republish this bank's authoritative cached assignments.
+        local occupied={}
+        for _,candidate in pairs(cache) do
+          if type(candidate)=="table" and candidate.bank==entry.bank then
+            occupied[candidate.slot]=true
+            if candidate.controls then bank.publish_controls(host,candidate.bank-1,candidate.logical_slot-1,candidate.controls,candidate.namespace) end
+            candidate.token=bank.load(host,candidate.bank-1,candidate.slot-1,candidate.path,candidate.namespace)
+            candidate.ready=false;candidate.requested_at=host.time_precise and host.time_precise() or 0
+          end
+        end
+        for slot=1,16 do
+          if not occupied[slot] then
+            bank.clear(host,entry.bank-1,slot-1,entry.namespace)
+            bank.publish_controls(host,entry.bank-1,slot-1,{gain=0,audible=false,output_pair=0},entry.namespace)
+          end
+        end
+      end
+    end
     if type(entry)=="table" and not track_valid then
       -- Managed tracks are disposable. A user can delete them between defer
       -- cycles, so never pass the retained MediaTrack pointer back to REAPER.
@@ -361,11 +408,13 @@ end
 -- on every mouse sample.
 function M.publish_pad_controls(host,rack,pad,cache_entry,audible)
   local bank_index,slot_index,namespace,controls=pad_publication(rack,pad,cache_entry,audible)
+  if cache_entry then cache_entry.controls=controls end
   return bank.publish_controls(host,bank_index,slot_index,controls,namespace)
 end
 
 function M.publish_pad(host, track, rack, pad, cache_entry)
   local bank_index,slot_index,namespace,controls=pad_publication(rack,pad,cache_entry)
+  if cache_entry then cache_entry.controls=controls end
   M.ensure_bank(host,track,bank_index,namespace)
   return bank.publish_controls(host,bank_index,slot_index,controls,namespace)
 end

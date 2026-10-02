@@ -24,6 +24,7 @@ M.AUDITION_OFFSET = 35500
 M.STATUS_OFFSET = 35000
 M.METER_OFFSET = 35100
 M.MAX_NAMESPACE = 7
+M.SESSION_OFFSET = 35664
 
 local function integer(value, name, minimum, maximum)
   assert(type(value) == "number" and value == math.floor(value), name .. " must be an integer")
@@ -54,6 +55,28 @@ end
 
 local function base(bank, namespace)
   return M.BASE + namespace_index(namespace) * 8 * M.BANK_STRIDE + integer(bank, "bank", 0, 7) * M.BANK_STRIDE
+end
+
+function M.bind(host,track,fx,bank,namespace)
+  if not host.TrackFX_GetParam then return end
+  local instance=host.TrackFX_GetParam(track,fx,9)
+  if type(instance)=="number" and instance>0 then
+    attach(host)
+    local address=base(bank,namespace)
+    if host.gmem_read(address+M.SESSION_OFFSET)==instance then return false end
+    host.gmem_write(address+M.SESSION_OFFSET,0)
+    for slot=0,15 do
+      host.gmem_write(address+slot*M.COMMAND_STRIDE,0)
+      host.gmem_write(address+M.CONTROL_OFFSET+slot*M.CONTROL_WORDS,0)
+      host.gmem_write(address+M.STATUS_OFFSET+slot*4,0)
+      host.gmem_write(address+M.LIVE_OFFSET+slot*3,0)
+      host.gmem_write(address+M.LIVE_OFFSET+slot*3+2,0)
+      host.gmem_write(address+M.AUDITION_OFFSET+slot*4+3,0)
+    end
+    host.gmem_write(address+M.SESSION_OFFSET,instance)
+    return true
+  end
+  return false
 end
 
 function M.meter(host, bank, slot, namespace)
@@ -165,7 +188,10 @@ function M.publish_controls(host, bank, slot, controls, namespace)
     clamp(finite(controls.drive or 0,"drive"),0,1),
     integer(controls.drive_character or 0,"drive_character",0,1),
   }
-  for index, value in ipairs(values) do host.gmem_write(address + index - 1, value) end
+  -- Zero marks an in-progress packet. Readers accept only a stable positive
+  -- revision, published after all controls and auxiliary fields are complete.
+  host.gmem_write(address,0)
+  for index=2,#values do host.gmem_write(address+index-1,values[index]) end
   -- A separate fixed mailbox keeps the established control stride compatible.
   -- 0 is intentionally treated as uninitialized/audible by the JSFX.
   host.gmem_write(base(bank,namespace)+M.AUDIO_MASK_OFFSET+slot,controls.audible==false and 1 or 2)
@@ -175,6 +201,7 @@ function M.publish_controls(host, bank, slot, controls, namespace)
   local envelope_address=base(bank,namespace)+M.ENVELOPE_OFFSET+slot*2
   host.gmem_write(envelope_address,integer(controls.envelope_mode or 0,"envelope_mode",0,1))
   host.gmem_write(envelope_address+1,clamp(finite(controls.hold_seconds or 0,"hold_seconds"),0,30))
+  host.gmem_write(address,control_revision)
   return control_revision
 end
 
@@ -185,7 +212,7 @@ local function command(host, bank, slot, opcode, path, namespace)
   assert(#path <= M.PATH_CAP, "sample path exceeds JSFX protocol capacity")
   local address = base(bank,namespace) + slot * M.COMMAND_STRIDE
   local command_token = math.floor(host.gmem_read(address + 2) or 0) % 16777214 + 1
-  host.gmem_write(address, M.MAGIC)
+  host.gmem_write(address, 0)
   host.gmem_write(address + 1, M.VERSION)
   host.gmem_write(address + 3, opcode)
   host.gmem_write(address + 4, slot)
@@ -193,6 +220,7 @@ local function command(host, bank, slot, opcode, path, namespace)
   for index = 1, #path do host.gmem_write(address + M.PATH_OFFSET + index - 1, path:byte(index)) end
   -- Commit last so the idle-thread reader can never observe a partial path.
   host.gmem_write(address + 2, command_token)
+  host.gmem_write(address, M.MAGIC)
   return command_token
 end
 
