@@ -1,10 +1,9 @@
 -- @description ReaDrumXT - Drum Sampler and Polymetric Step Sequencer
--- @version 0.1.14
+-- @version 0.1.15
 -- @author davvolinni-ui
 -- @changelog
---   Improves project save integrity and sampler recovery after reopening.
---   Isolates open project engines and preserves enclosing track folders.
---   Adds a default pad fader level preference for new racks.
+--   Adds verified project sample collection and portable sample references.
+--   Adds waveform zoom and pan with improved envelope display.
 -- @link
 --   Support https://forum.cockos.com/showthread.php?t=310870
 --   Repository https://github.com/davvolinni-ui/ReaDrumXT

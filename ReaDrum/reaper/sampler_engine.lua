@@ -208,6 +208,16 @@ function M.reconcile(host, track, rack, previous, bank_tracks)
   local outputs = assert(allocator.allocate_outputs(rack.outputs))
   local namespace=math.max(0,math.min(bank.MAX_NAMESPACE,math.floor(tonumber(rack.engine_namespace) or 0)))
   local next_cache, report = {}, { banks = 0, controls = 0, loads = 0, clears = 0 }
+  local reserved={}
+  for _,pad in ipairs(rack.pads) do
+    local prior=previous[pad.id]
+    local location=pads.by_pad_id[pad.id]
+    local target_track=bank_tracks and bank_tracks[location.bank] or track
+    if type(prior)=="table" and prior.path==sample_path(pad.sample) and prior.bank==location.bank
+      and prior.namespace==namespace and prior.track==target_track then
+      reserved[prior.bank..":"..prior.slot]=pad.id
+    end
+  end
   -- Build the new cache before touching any sampler slots.  A pad move can be
   -- a swap: clearing old slots after writing the new destinations would erase
   -- the samples that were just moved into those slots.
@@ -218,12 +228,19 @@ function M.reconcile(host, track, rack, previous, bank_tracks)
       local prior=previous[pad.id]
       local target_track=bank_tracks and bank_tracks[location.bank] or track
       local reuse=type(prior)=="table" and prior.path==path and prior.bank==location.bank
-        and prior.slot==location.slot and prior.namespace==namespace and prior.track==target_track
+        and prior.namespace==namespace and prior.track==target_track
       local entry
       if reuse then
         entry=prior
       else
-        entry={bank=location.bank,slot=location.slot,path=path,ready=false,needs_load=true}
+        local slot=location.slot
+        if reserved[location.bank..":"..slot] then
+          for candidate=1,16 do
+            if not reserved[location.bank..":"..candidate] then slot=candidate;break end
+          end
+        end
+        reserved[location.bank..":"..slot]=pad.id
+        entry={bank=location.bank,slot=slot,path=path,ready=false,needs_load=true}
       end
       entry.signature=table.concat({path,entry.bank,entry.slot},"\0")
       entry.logical_bank,entry.logical_slot=location.bank,location.slot
@@ -275,8 +292,7 @@ function M.reconcile(host, track, rack, previous, bank_tracks)
       bank.publish_controls(host,location.bank-1,location.slot-1,entry.controls,namespace)
       report.controls = report.controls + 1
       if entry.needs_load then
-        entry.token=bank.load(host, location.bank - 1, location.slot - 1, path,namespace)
-        entry.bank,entry.slot=location.bank,location.slot
+        entry.token=bank.load(host, entry.bank - 1, entry.slot - 1, path,namespace)
         entry.signature=table.concat({path,entry.bank,entry.slot},"\0")
         entry.needs_load=nil
         entry.requested_at=host.time_precise and host.time_precise() or 0
@@ -291,6 +307,8 @@ function M.reconcile(host, track, rack, previous, bank_tracks)
     for slot=1,16 do
       if not occupied[bank_number..":"..slot] then
         bank.clear(host,bank_number-1,slot-1,namespace)
+      end
+      if not pads.banks[bank_number][slot] or not next_cache[pads.banks[bank_number][slot]] then
         bank.publish_controls(host,bank_number-1,slot-1,{gain=0,audible=false,output_pair=0},namespace)
       end
     end
@@ -315,10 +333,11 @@ function M.poll(host, track, cache, limit)
       if bound then
         -- A late compile/restore creates a new FX session. Its old mailbox was
         -- discarded; republish this bank's authoritative cached assignments.
-        local occupied={}
+        local occupied,logical_occupied={},{}
         for _,candidate in pairs(cache) do
           if type(candidate)=="table" and candidate.bank==entry.bank then
             occupied[candidate.slot]=true
+            logical_occupied[candidate.logical_slot]=true
             if candidate.controls then bank.publish_controls(host,candidate.bank-1,candidate.logical_slot-1,candidate.controls,candidate.namespace) end
             candidate.token=bank.load(host,candidate.bank-1,candidate.slot-1,candidate.path,candidate.namespace)
             candidate.ready=false;candidate.requested_at=host.time_precise and host.time_precise() or 0
@@ -327,6 +346,8 @@ function M.poll(host, track, cache, limit)
         for slot=1,16 do
           if not occupied[slot] then
             bank.clear(host,entry.bank-1,slot-1,entry.namespace)
+          end
+          if not logical_occupied[slot] then
             bank.publish_controls(host,entry.bank-1,slot-1,{gain=0,audible=false,output_pair=0},entry.namespace)
           end
         end

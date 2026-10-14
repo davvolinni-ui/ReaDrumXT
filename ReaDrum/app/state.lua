@@ -1,6 +1,7 @@
 -- @noindex
 local json = require("ReaDrum.core.json")
 local model = require("ReaDrum.core.model")
+local project_media = require("ReaDrum.reaper.project_media")
 
 local M = { SECTION = "ReaDrum", VERSION = 2, CHUNK = 48000 }
 
@@ -16,7 +17,9 @@ local function compact_value(value,tick)
   if tick then tick() end
   local out={}
   for key,child in pairs(value)do
-    if not (value.type=="Lane"and key=="steps")then out[compact_value(key,tick)]=compact_value(child,tick)end
+    if key=="path" and value.project_relative_path then
+      out.path=assert(project_media.relative(value.project_relative_path),"Invalid collected sample path")
+    elseif key~="_project_directory" and not (value.type=="Lane"and key=="steps")then out[compact_value(key,tick)]=compact_value(child,tick)end
   end
   if value.type=="Lane"then
     out.steps={};out._sparse_steps=true
@@ -308,11 +311,11 @@ function M.load(host,project)
     if failure then errors[#errors+1]=failure end
   end
   local rack=attempt(nil)
-  if rack then return rack,true end
+  if rack then project_media.resolve_rack(rack,project_media.directory(host,project));return rack,true end
   local folder=folder_track(host,project)
   if folder then
     rack=attempt(folder)
-    if rack then return rack,true,"Recovered ReaDrum state from its folder track" end
+    if rack then project_media.resolve_rack(rack,project_media.directory(host,project));return rack,true,"Recovered ReaDrum state from its folder track" end
   end
   -- Never reconcile/save a blank rack over an existing but unreadable kit.
   if #errors>0 then error(table.concat(errors,"; ")..". Saved ReaDrum state was left intact.",2) end

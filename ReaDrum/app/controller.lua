@@ -15,6 +15,7 @@ local scheduler_oracle = require("ReaDrum.reaper.scheduler_oracle")
 local transport = require("ReaDrum.reaper.transport_map")
 local state = require("ReaDrum.app.state")
 local bridge = require("ReaDrum.app.bridge")
+local project_media = require("ReaDrum.reaper.project_media")
 
 local Controller = {}
 Controller.__index = Controller
@@ -90,8 +91,8 @@ local function initialize_sample_envelope(host,pad,path)
     transpose=math.floor(total+(total>=0 and .5 or -.5));cents=(total-transpose)*100
   end
   local playback_rate=math.max(.000001,2^(((transpose or 0)+(cents or 0)/100)/12))
-  -- A newly enabled AHD envelope is neutral: its decay reaches silence at
-  -- the sample boundary. Moving D left is what intentionally shortens it.
+  -- Initial AHD decay fades to silence at the sample boundary. Enabling it
+  -- shapes the level throughout the sample; it is not a bypass envelope.
   local default_decay=duration*math.max(.001,trim_end-trim_start)/playback_rate
   controls.ahd_decay=envelope.time_control(default_decay,envelope.DECAY_MAX_SECONDS)
 end
@@ -1430,6 +1431,49 @@ function Controller:paste_variation()
   self.selected_step=1;self:mark_dirty(false);self.status="Variation pasted"
 end
 
+function Controller:collect_project_samples()
+  if self.media_collection then self.status="Sample collection is already running";return false end
+  if self.host.GetPlayStateEx and self.host.GetPlayStateEx(self.project)~=0 then
+    self.status="Stop playback before collecting project samples";return false
+  end
+  local directory=project_media.directory(self.host,self.project)
+  if not directory then
+    if self.host.Main_SaveProject then self.host.Main_SaveProject(self.project,true) end
+    directory=project_media.directory(self.host,self.project)
+    if not directory then self.status="Collection cancelled: save the project first";return false end
+  end
+  local token=(self.host.genGuid and self.host.genGuid() or tostring(os.time()).."-"..tostring(math.floor(self.host.time_precise()*1000000))):gsub("[^%w%-]","")
+  local ok,task=pcall(project_media.begin_collect,self.rack,directory,token,project_media.filesystem(self.host))
+  if not ok then self.status="Collection failed: "..tostring(task);return false end
+  if #task.inputs==0 then self.status="No samples to collect";return false end
+  self.media_collection=task
+  self.status="Collecting project samples…"
+  return true
+end
+function Controller:process_media_collection()
+  local task=self.media_collection;if not task then return end
+  local complete,failure=project_media.step(task,8)
+  if complete==nil then self.status=string.format("Collecting samples: %d/%d verified",task.copied,#task.files);return end
+  self.media_collection=nil
+  if not complete then self.status="Collection failed; sample references unchanged: "..failure;return end
+  local ok,why=pcall(project_media.commit,task,self.rack,project_media.directory(self.host,self.project))
+  if not ok then project_media.cancel(task);self.status="Collection cancelled: "..tostring(why);return end
+  self:mark_dirty(true)
+  self.structural_pad_ids={}
+  local flushed,flush_failure=self:flush(true,{undo_label="ReaDrum: collect project samples"})
+  if not flushed then
+    -- Keep the verified copies. Restore the previous references and republish
+    -- them so a failed commit cannot leave model and engine paths disagreeing.
+    for _,input in ipairs(task.inputs)do input.pad.sample=input.sample end
+    self.dirty,self.structural_dirty,self.publish_dirty=true,true,true
+    self:flush(true)
+    self.status="Collection could not be saved; original references restored: "..tostring(flush_failure)
+    return
+  end
+  if self.host.Main_SaveProject then self.host.Main_SaveProject(self.project,false) end
+  self.status=string.format("Collected %d files for %d pads. Share the project folder; recipient launches ReaDrum once, then saves.",task.copied,#task.inputs)
+end
+
 function Controller:save_kit()
   local path
   if self.host.JS_Dialog_BrowseForSaveFile then local ok,value=self.host.JS_Dialog_BrowseForSaveFile("Save ReaDrum Kit","","ReaDrum Kit.readrum","ReaDrum Kit (*.readrum)\0*.readrum\0");if ok==1 then path=value end
@@ -1445,6 +1489,7 @@ function Controller:load_kit()
   local file,err=io.open(path,"rb");if not file then self.status="Could not load kit: "..tostring(err);return end;local raw=file:read("*a");file:close()
   local decoded;ok,decoded=pcall(json.decode,raw);if not ok then self.status="Invalid kit: "..tostring(decoded);return end;local valid,why=model.validate_rack(decoded);if not valid then self.status="Invalid kit: "..tostring(why);return end
   decoded.engine_namespace=self.rack.engine_namespace
+  for _,pad in ipairs(decoded.pads or {})do project_media.detach_foreign(pad.sample,project_media.directory(self.host,self.project))end
   self.undo_stack[#self.undo_stack+1]=state.compact(self.rack);self.rack=decoded;self.pattern_index=1;self.variation_index=1;self.selected_pad=1;self.selected_step=1;self.dirty=true;self.structural_dirty=true;self.publish_dirty=true;self.variation_events_dirty=true;self.structural_pad_ids={};self.due=0;self:flush(true);self.status="Kit loaded"
 end
 
@@ -1551,6 +1596,7 @@ function Controller:paste_pad()
   local envelope=self:get_clipboard_envelope("pad");local copied=(envelope and envelope.payload.pad) or self.pad_clipboard
   if not copied then self.status="No copied pad";return end
   local destination=self:pad();local source=model.deep_copy(copied)
+  project_media.detach_foreign(source.sample,project_media.directory(self.host,self.project))
   local id,logical_index,refs=destination.id,destination.logical_index,destination.reaper_object_refs
   for key in pairs(destination) do destination[key]=nil end
   for key,value in pairs(source) do destination[key]=value end
@@ -1937,6 +1983,45 @@ function Controller:set_pad_output_number(indices,number)
   table.sort(self.rack.outputs,function(a,b)local an=a.id=="main"and 1 or tonumber(a.id:match("(%d+)$"))or 99;local bn=b.id=="main"and 1 or tonumber(b.id:match("(%d+)$"))or 99;return an<bn end)
   self:mark_dirty(true);return true
 end
+function Controller:route_bank_to_outputs(bank_number)
+  bank_number=tonumber(bank_number or self.rack.selected_bank)
+  if not bank_number or bank_number~=math.floor(bank_number) or bank_number<1 or bank_number>8 then
+    self.status="Select a valid bank to route";return false
+  end
+  local outputs={}
+  for _,output in ipairs(self.rack.outputs or {})do outputs[output.id]=output end
+  local first=(bank_number-1)*16+1
+  local changed=false
+  for position=1,16 do
+    local id=position==1 and "main" or "output_"..position
+    local pad=self:pad(first+position-1)
+    if pad and pad.output_id~=id then changed=true end
+    if not outputs[id] then changed=true end
+  end
+  if not changed then self.status="Bank "..string.char(64+bank_number).." already uses outputs 1–16";return true end
+  self:mark_dirty(true)
+  self.rack.outputs=self.rack.outputs or {}
+  for position=1,16 do
+    local id=position==1 and "main" or "output_"..position
+    if not outputs[id] then
+      local output=model.new_output({id=id,name=position==1 and "Main" or "Output "..position})
+      self.rack.outputs[#self.rack.outputs+1]=output;outputs[id]=output
+    end
+    local pad=self:pad(first+position-1)
+    if pad then pad.output_id=id end
+  end
+  table.sort(self.rack.outputs,function(a,b)
+    local an=a.id=="main" and 1 or tonumber(a.id:match("(%d+)$")) or 99
+    local bn=b.id=="main" and 1 or tonumber(b.id:match("(%d+)$")) or 99
+    return an<bn
+  end)
+  -- This action covers a whole bank, including unloaded pads. Reconcile the
+  -- complete rack instead of retaining a previous single-pad edit filter.
+  self.structural_pad_ids={}
+  self.status="Bank "..string.char(64+bank_number).." routed to outputs 1–16"
+  return true
+end
+
 function Controller:set_pad_track_color_sync(enabled)
   if self.host.SetExtState then self.host.SetExtState("ReaDrum5k","apply_pad_track_colors",enabled and "1" or "0",true) end
   if enabled then self:sync_pad_track_names() end
@@ -2439,6 +2524,7 @@ function Controller:clear_pads(indices)
 end
 
 function Controller:close()
+  if self.media_collection then project_media.cancel(self.media_collection);self.media_collection=nil end
   if self.groove_preview then self:cancel_groove_preview(true) end
   self:process_structural_queue(math.huge)
   if self.dirty then self:flush(true) else self:save_if_due(true) end
@@ -2453,6 +2539,7 @@ end
 
 function Controller:restore_history(snapshot,target)
   local current=self.rack;local rack=state.expand(model.deep_copy(snapshot));local structural_ids={}
+  project_media.resolve_rack(rack,project_media.directory(self.host,self.project))
   rack.engine_namespace=current.engine_namespace
   local audibility={}
   for _,pad in ipairs(current.pads or {}) do

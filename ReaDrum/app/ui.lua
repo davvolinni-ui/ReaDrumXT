@@ -8,6 +8,7 @@ local envelope = require("ReaDrum.core.envelope")
 local diagnostics = require("ReaDrum.reaper.diagnostics")
 local playback_capture = require("ReaDrum.reaper.playback_capture")
 local envelope_math = envelope
+local waveform_view = require("ReaDrum.core.waveform_view")
 
 local module_source=debug.getinfo(1,"S").source:sub(2)
 local product_directory=assert(module_source:match("^(.*)[/\\]app[/\\]ui%.lua$"),"ReaDrum UI must remain inside Scripts/ReaDrum/app")
@@ -1681,6 +1682,11 @@ function UI:top_toolbar()
     if r.ImGui_BeginPopup(c,"##toolbar_utilities_popup") then
       if r.ImGui_MenuItem(c,"Save kit") then app:save_kit() end
       if r.ImGui_MenuItem(c,"Load kit") then app:load_kit() end
+      if r.ImGui_MenuItem(c,"Collect samples into project…") then app:collect_project_samples() end
+      self:tooltip("Copy and verify used samples beside the saved project.\nShare the entire project folder. On another computer, launch ReaDrum once and save before closing its window.")
+      r.ImGui_Separator(c)
+      if r.ImGui_MenuItem(c,"Route bank "..string.char(64+app.rack.selected_bank).." pads to outputs 1–16") then app:route_bank_to_outputs() end
+      self:tooltip("Assign the current bank's pad positions 1–16 to the matching outputs.\nKeep output names and other banks' assignments unchanged.\nEmpty pads retain their assignment for later sample loading.")
       r.ImGui_Separator(c)
       if r.ImGui_MenuItem(c,"Preferences") then open_preferences=true end
       r.ImGui_EndPopup(c)
@@ -2452,10 +2458,23 @@ function UI:sequence_grid(height)
       local wheel=r.ImGui_GetMouseWheel(c)
       if wheel~=0 then
         local _,shift=self:key_modifiers()
-        -- Plain wheel always scrolls lanes vertically. Horizontal movement is
-        -- explicit (Shift+wheel or the scrollbar), preventing a casual wheel
-        -- gesture over step cells from hiding every short lane off to the left.
-        if shift and r.ImGui_GetScrollX and r.ImGui_SetScrollX then
+        -- A wheel gesture over the horizontal scrollbar belongs to that axis.
+        -- Elsewhere plain wheel scrolls lanes, and Shift+wheel scrolls steps.
+        local over_horizontal_scrollbar=false
+        if r.ImGui_GetScrollMaxX and r.ImGui_GetScrollMaxX(c)>0 then
+          local window_x,window_y=r.ImGui_GetWindowPos(c)
+          local window_width,window_height=r.ImGui_GetWindowSize(c)
+          local mouse_x,mouse_y=r.ImGui_GetMousePos(c)
+          local scrollbar_size=14
+          if r.ImGui_GetStyleVar and r.ImGui_StyleVar_ScrollbarSize then
+            scrollbar_size=r.ImGui_GetStyleVar(c,r.ImGui_StyleVar_ScrollbarSize())
+          end
+          local right=window_x+window_width
+          if r.ImGui_GetScrollMaxY and r.ImGui_GetScrollMaxY(c)>0 then right=right-scrollbar_size end
+          over_horizontal_scrollbar=mouse_x>=window_x and mouse_x<right
+            and mouse_y>=window_y+window_height-scrollbar_size and mouse_y<window_y+window_height
+        end
+        if (shift or over_horizontal_scrollbar) and r.ImGui_GetScrollX and r.ImGui_SetScrollX then
           local next_x=math.max(0,r.ImGui_GetScrollX(c)+wheel*64)
           r.ImGui_SetScrollX(c,next_x);self.grid_scroll_x=next_x
         elseif r.ImGui_GetScrollY and r.ImGui_SetScrollY then
@@ -2601,6 +2620,13 @@ function UI:waveform(path,width,height,start_pos,end_pos,id,envelope)
   local fade_out_curve=math.max(0,math.min(1,envelope.fade_out_curve or DEFAULTS.fade_out_curve))
   local x,y=r.ImGui_GetCursorScreenPos(c)
   local draw=r.ImGui_GetWindowDrawList(c)
+  self.waveform_views=self.waveform_views or {}
+  local view_key=id or "##waveform"
+  local view=self.waveform_views[view_key]
+  if not view or view.path~=path then view={path=path,first=0,last=1};self.waveform_views[view_key]=view end
+  local view_first,view_last=view.first,view.last
+  local function sample_x(position)return x+waveform_view.screen(position,view_first,view_last,width) end
+  r.ImGui_DrawList_PushClipRect(draw,x,y,x+width,y+height,true)
   local light_theme=theme.luminance(C.panel)>=145
   local canvas_color=C.panel2
   local trim_color=((light_theme and C.step or C.window)&0xFFFFFF00)|0xD8
@@ -2611,7 +2637,7 @@ function UI:waveform(path,width,height,start_pos,end_pos,id,envelope)
   local mid=y+height/2
   r.ImGui_DrawList_AddLine(draw,x,mid,x+width,mid,C.border,1)
   local display_gain=math.max(0,math.min(4,((tonumber(envelope.volume)or .5)/.5)^2))
-  local visible_first,visible_last=1,#points
+  local visible_first,visible_last=math.floor(view_first*math.max(0,#points-1))+1,math.min(#points,math.ceil(view_last*#points))
   local visible_count=math.max(0,visible_last-visible_first+1)
   local columns=math.min(math.max(1,math.floor(width)),visible_count)
   for column=0,columns-1 do
@@ -2623,14 +2649,14 @@ function UI:waveform(path,width,height,start_pos,end_pos,id,envelope)
     local amp=math.min(1,peak*display_gain)*(height*0.44)
     r.ImGui_DrawList_AddLine(draw,px,mid-amp,px,mid+amp,C.waveform,1)
   end
-  local sx,ex=x+start_pos*width,x+end_pos*width
+  local sx,ex=sample_x(start_pos),sample_x(end_pos)
   if sx>x then r.ImGui_DrawList_AddRectFilled(draw,x,y,sx,y+height,trim_color,4) end
   if ex<x+width then r.ImGui_DrawList_AddRectFilled(draw,ex,y,x+width,y+height,trim_color,4) end
   local trim_active=self.wave_drag=="start" or self.wave_drag=="end"
   local start_color,end_color=(C.red&0xFFFFFF00)|(trim_active and 0xFF or 0xB8),(C.red&0xFFFFFF00)|(trim_active and 0xFF or 0xB8)
   r.ImGui_DrawList_AddLine(draw,sx,y,sx,y+height,start_color,2)
   r.ImGui_DrawList_AddLine(draw,ex,y,ex,y+height,end_color,2)
-  local span=math.max(1,ex-sx);local top_y=y+9;local bottom_y=y+height-9;local sustain_y=bottom_y-sustain*(bottom_y-top_y)
+  local span=math.max(.000001,ex-sx);local top_y=y+21;local bottom_y=y+height-9;local sustain_y=bottom_y-sustain*(bottom_y-top_y)
   local source_duration=math.max(.001,(self.waveform_duration and self.waveform_duration[path or ""]) or 1)
   local trimmed_duration=math.max(.001,source_duration*math.max(.001,end_pos-start_pos))
   local transpose,cents
@@ -2645,14 +2671,17 @@ function UI:waveform(path,width,height,start_pos,end_pos,id,envelope)
   local hold_seconds=envelope_math.time_seconds(hold,envelope_math.HOLD_MAX_SECONDS)
   local default_decay_position=envelope_mode=="ahd" and DEFAULT_AHD_DECAY_POSITION or DEFAULT_ADSR_DECAY_POSITION
   local default_decay_seconds=trimmed_duration*default_decay_position/playback_rate
-  if saved_decay==nil then decay=envelope_math.time_control(default_decay_seconds,envelope_math.DECAY_MAX_SECONDS) end
+  -- Missing values must display the engine fallback, not a visual preset.
+  if saved_decay==nil then decay=envelope_math.DEFAULT_DECAY_CONTROL end
   local decay_seconds=envelope_math.time_seconds(decay,envelope_math.DECAY_MAX_SECONDS)
-  local attack_x=sx+span*math.min(1,attack_seconds*playback_rate/trimmed_duration)
-  local hold_x=math.max(attack_x,sx+span*math.min(1,(attack_seconds+hold_seconds)*playback_rate/trimmed_duration))
-  local decay_x=math.max(envelope_mode=="ahd" and hold_x or attack_x,sx+span*math.min(1,(attack_seconds+(envelope_mode=="ahd" and hold_seconds or 0)+decay_seconds)*playback_rate/trimmed_duration))
+  local attack_x=sx+span*attack_seconds*playback_rate/trimmed_duration
+  local hold_x=attack_x+span*hold_seconds*playback_rate/trimmed_duration
+  local decay_x=attack_x+span*((envelope_mode=="ahd" and hold_seconds or 0)+decay_seconds)*playback_rate/trimmed_duration
   local release_seconds=envelope_math.time_seconds(release,envelope_math.RELEASE_MAX_SECONDS)
   local release_x=math.max(decay_x,ex-span*math.min(1,release_seconds*playback_rate/trimmed_duration))
-  local sustain_x=decay_x+(release_x-decay_x)*.55
+  local sustain_x=decay_x+(ex-decay_x)*.55
+  -- Preserve and describe the legacy engine's zero-decay behavior.
+  if envelope_mode=="adsr" and decay_seconds==0 then sustain_y=top_y end
   local envelope_active=self.wave_drag=="attack" or self.wave_drag=="hold" or self.wave_drag=="decay" or self.wave_drag=="sustain" or self.wave_drag=="release"
   local envelope_base=C.value_marker or C.accent
   local envelope_color=(envelope_base&0xFFFFFF00)|(envelope_active and 0xFF or 0x94)
@@ -2667,7 +2696,8 @@ function UI:waveform(path,width,height,start_pos,end_pos,id,envelope)
     return tx+text_width*.5,ty+6
   end
   local attack_label_x,attack_label_y,hold_label_x,hold_label_y,decay_label_x,decay_label_y
-  if show_adsr then
+  if show_adsr and ex>x and sx<x+width then
+    r.ImGui_DrawList_PushClipRect(draw,math.max(x,sx),y,math.min(x+width,ex),y+height,true)
     local decay_y=envelope_mode=="ahd" and bottom_y or sustain_y
     r.ImGui_DrawList_AddLine(draw,sx,bottom_y,attack_x,top_y,envelope_color,envelope_width)
     if envelope_mode=="ahd" then
@@ -2675,8 +2705,8 @@ function UI:waveform(path,width,height,start_pos,end_pos,id,envelope)
       r.ImGui_DrawList_AddLine(draw,hold_x,top_y,decay_x,bottom_y,envelope_color,envelope_width)
     else
       r.ImGui_DrawList_AddLine(draw,attack_x,top_y,decay_x,sustain_y,envelope_color,envelope_width)
-      r.ImGui_DrawList_AddLine(draw,decay_x,sustain_y,release_x,sustain_y,(envelope_base&0xFFFFFF00)|(envelope_active and 0xE8 or 0x70),envelope_active and 1.8 or 1.0)
-      r.ImGui_DrawList_AddLine(draw,release_x,sustain_y,ex,bottom_y,envelope_color,envelope_width)
+      -- Release begins at MIDI note-off, whose position is not known here.
+      if decay_x<=ex then r.ImGui_DrawList_AddLine(draw,decay_x,sustain_y,ex,sustain_y,(envelope_base&0xFFFFFF00)|(envelope_active and 0xE8 or 0x70),envelope_active and 1.8 or 1.0) end
     end
     local attack_align=envelope_mode=="ahd" and attack_x>x+28 and "left" or "right"
     attack_label_x,attack_label_y=envelope_handle(attack_x,top_y,"A",attack_align)
@@ -2688,8 +2718,8 @@ function UI:waveform(path,width,height,start_pos,end_pos,id,envelope)
     else
       envelope_handle(decay_x,sustain_y,"D",decay_x>x+width*.8 and "left" or "right")
       envelope_handle(sustain_x,sustain_y,"S",sustain_x>x+width*.8 and "left" or "right")
-      envelope_handle(release_x,sustain_y,"R",release_x>x+width*.8 and "left" or "right")
     end
+    r.ImGui_DrawList_PopClipRect(draw)
   end
   local fade_in_seconds=envelope_math.time_seconds(fade_in,envelope_math.FADE_MAX_SECONDS)
   local fade_out_seconds=envelope_math.time_seconds(fade_out,envelope_math.FADE_MAX_SECONDS)
@@ -2739,6 +2769,20 @@ function UI:waveform(path,width,height,start_pos,end_pos,id,envelope)
     if fade_out>0 then r.ImGui_DrawList_AddCircleFilled(draw,fo_mid_x,fo_mid_y,4,fade_color,12) end
   end
   r.ImGui_InvisibleButton(c,id or "##waveform",width,height)
+  local hovered=r.ImGui_IsItemHovered(c)
+  local _,shift=self:key_modifiers()
+  local navigating=false
+  if hovered then
+    if r.ImGui_SetItemUsingMouseWheel then r.ImGui_SetItemUsingMouseWheel(c) end
+    local wheel=r.ImGui_GetMouseWheel and r.ImGui_GetMouseWheel(c) or 0
+    if wheel~=0 then
+      local mx=r.ImGui_GetMousePos(c)
+      view.first,view.last=waveform_view.zoom(view_first,view_last,math.max(0,math.min(1,(mx-x)/width)),wheel)
+      self.control_wheel_consumed=true;self.sequence_wheel_consumed=true
+      if r.ImGui_SetScrollY and view.scroll then r.ImGui_SetScrollY(c,view.scroll) end
+      navigating=true
+    elseif r.ImGui_GetScrollY then view.scroll=r.ImGui_GetScrollY(c) end
+  end
   local candidates={}
   if show_adsr then
     candidates[#candidates+1]={"attack",attack_x,top_y};candidates[#candidates+1]={"decay",decay_x,envelope_mode=="ahd" and bottom_y or sustain_y}
@@ -2749,7 +2793,7 @@ function UI:waveform(path,width,height,start_pos,end_pos,id,envelope)
       candidates[#candidates+1]={"attack",attack_label_x,attack_label_y}
       candidates[#candidates+1]={"hold",hold_label_x,hold_label_y}
       candidates[#candidates+1]={"decay",decay_label_x,decay_label_y}
-    else candidates[#candidates+1]={"sustain",sustain_x,sustain_y};candidates[#candidates+1]={"release",release_x,sustain_y} end
+    elseif decay_x<=ex then candidates[#candidates+1]={"sustain",sustain_x,sustain_y} end
   end
   -- Envelope points come first so an AHD D at the neutral sample boundary is
   -- draggable instead of losing an equal-distance hit test to the trim end.
@@ -2759,20 +2803,33 @@ function UI:waveform(path,width,height,start_pos,end_pos,id,envelope)
   if fade_out>0 then candidates[#candidates+1]={"fade_out_curve",fo_mid_x,fo_mid_y} end
   local function nearest_handle()
     local mx,my=r.ImGui_GetMousePos(c);local nearest,distance="start",math.huge
-    for _,candidate in ipairs(candidates) do local dx,dy=mx-candidate[2],my-candidate[3];local next_distance=dx*dx+dy*dy;if next_distance<distance then nearest,distance=candidate[1],next_distance end end
+    for _,candidate in ipairs(candidates) do
+      if candidate[2] and candidate[2]>=math.max(x,sx) and candidate[2]<=math.min(x+width,ex) then
+        local dx,dy=mx-candidate[2],my-candidate[3];local next_distance=dx*dx+dy*dy
+        if next_distance<distance and next_distance<=18*18 then nearest,distance=candidate[1],next_distance end
+      end
+    end
+    if distance==math.huge then return nil end
     return nearest
   end
-  if r.ImGui_IsItemActivated(c) then
-    self.wave_drag=nearest_handle()
+  if r.ImGui_IsItemActivated(c) and not navigating then
+    self.wave_drag=not shift and nearest_handle() or nil
+    if not self.wave_drag then view.pan_first,view.pan_last=view_first,view_last end
   end
+  if r.ImGui_IsItemActive(c) and view.pan_first then
+    local dx=r.ImGui_GetMouseDragDelta(c,0,0)
+    view.first,view.last=waveform_view.pan(view.pan_first,view.pan_last,-dx/width*(view.pan_last-view.pan_first))
+    self.wave_drag=nil
+  elseif not r.ImGui_IsMouseDown(c,0) then view.pan_first,view.pan_last=nil,nil end
   local changed=false
   if r.ImGui_IsItemHovered(c) and r.ImGui_IsMouseClicked and r.ImGui_IsMouseClicked(c,1) then
     local target=nearest_handle()
+    if not target then view.first,view.last=0,1;self.wave_drag=nil end
     if target=="start" then start_pos=0 elseif target=="end" then end_pos=1 elseif target=="fade_in" then fade_in=0 elseif target=="fade_out" then fade_out=0 elseif target=="fade_in_curve" then fade_in_curve=DEFAULTS.fade_in_curve elseif target=="fade_out_curve" then fade_out_curve=DEFAULTS.fade_out_curve elseif target=="attack" then attack=DEFAULTS.attack elseif target=="hold" then hold=0 elseif target=="decay" then decay=envelope_math.time_control(default_decay_seconds,envelope_math.DECAY_MAX_SECONDS) elseif target=="sustain" then sustain=DEFAULTS.sustain elseif target=="release" then release=DEFAULTS.release end
-    changed=true
+    changed=target~=nil
   end
   if r.ImGui_IsItemActive(c) and self.wave_drag then
-    local mx,my=r.ImGui_GetMousePos(c);local point=math.max(0,math.min(1,(mx-x)/width))
+    local mx,my=r.ImGui_GetMousePos(c);local point=math.max(0,math.min(1,waveform_view.position(mx-x,view_first,view_last,width)))
     if self.wave_drag=="start" then local value=math.min(point,end_pos-.001);changed=value~=start_pos;start_pos=value
     elseif self.wave_drag=="end" then local value=math.max(point,start_pos+.001);changed=value~=end_pos;end_pos=value
     elseif self.wave_drag=="fade_in" then local seconds=math.max(0,math.min(envelope_math.FADE_MAX_SECONDS,(point-start_pos)/math.max(.001,end_pos-start_pos)*trimmed_duration));local value=envelope_math.time_control(seconds,envelope_math.FADE_MAX_SECONDS);changed=value~=fade_in;fade_in=value
@@ -2788,10 +2845,25 @@ function UI:waveform(path,width,height,start_pos,end_pos,id,envelope)
   local fade_summary=string.format("Fade In %s   Fade Out %s",
     envelope_math.format_time(envelope_math.time_seconds(fade_in,envelope_math.FADE_MAX_SECONDS)),
     envelope_math.format_time(envelope_math.time_seconds(fade_out,envelope_math.FADE_MAX_SECONDS)))
-  local tooltip=show_adsr and (envelope_mode=="ahd" and string.format("Drag Start/End, fade triangles, or A/H/D handles\nA %s   H %s   D %s\n%s\nRight-click the nearest handle to reset it",envelope_value_text("attack",attack),envelope_value_text("hold",hold),envelope_value_text("decay",decay),fade_summary) or string.format("Drag Start/End, fade triangles, or A/D/S/R handles\nA %s   D %s   S %s   R %s\n%s\nRight-click the nearest handle to reset it",
+  local tooltip=show_adsr and (envelope_mode=="ahd" and string.format("Drag Start/End, fade triangles, or A/H/D handles\nA %s   H %s   D %s\n%s\nRight-click the nearest handle to reset it",envelope_value_text("attack",attack),envelope_value_text("hold",hold),envelope_value_text("decay",decay),fade_summary) or string.format("Drag Start/End, fade triangles, or A/D/S handles\nA %s   D %s   S %s   R %s\n%s\nRight-click the nearest handle to reset it",
     envelope_value_text("attack",attack),envelope_value_text("decay",decay),envelope_value_text("sustain",sustain),envelope_value_text("release",release),fade_summary))
     or "Drag Start, End, or the small fade triangles\n"..fade_summary.."\nRight-click the nearest handle to reset it"
-  self:tooltip(tooltip)
+  local ruler_color=(C.text&0xFFFFFF00)|0xB0
+  for tick=0,4 do
+    local fraction=view_first+(view_last-view_first)*tick/4
+    local seconds=fraction*source_duration/playback_rate
+    local text=seconds<1 and string.format("%.0f ms",seconds*1000) or string.format("%.2f s",seconds)
+    local tx=x+width*tick/4
+    local tw=r.ImGui_CalcTextSize(c,text)
+    r.ImGui_DrawList_AddText(draw,math.max(x+2,math.min(x+width-tw-2,tx)),y+2,ruler_color,text)
+  end
+  if show_adsr and decay_x>ex then
+    local text="Envelope extends past sample end"
+    local tw=r.ImGui_CalcTextSize(c,text)
+    r.ImGui_DrawList_AddText(draw,math.max(x+2,x+width-tw-4),y+height-16,ruler_color,text)
+  end
+  r.ImGui_DrawList_PopClipRect(draw)
+  self:tooltip(tooltip.."\nWheel: zoom at pointer; drag empty space: pan\nShift-drag: pan from anywhere; right-click empty space: fit sample\nRuler: playback time at the pad pitch. Fades use source time.\nADSR Release starts at Gate note-off; edit it in the value box.")
   return changed,start_pos,end_pos,attack,hold,decay,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve
 end
 
@@ -3039,13 +3111,14 @@ function UI:pads()
   local path=type(pad.sample)=="table" and pad.sample.path or pad.sample
   if show_quick_wave then
     r.ImGui_Separator(c)
-    local changed,start_pos,end_pos,attack,hold,decay,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve=self:waveform(path,avail,quick_wave_height,controls.sample_start or DEFAULTS.sample_start,controls.sample_end or DEFAULTS.sample_end,"##quick_pad_waveform",controls)
+    local changed,start_pos,end_pos,attack,hold,decay,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve=self:waveform(path,avail,quick_wave_height-42,controls.sample_start or DEFAULTS.sample_start,controls.sample_end or DEFAULTS.sample_end,"##quick_pad_waveform",controls)
     if changed then
       self:apply_selected_pad_control_edit(function(target_controls)
         target_controls.sample_start,target_controls.sample_end,target_controls.attack,target_controls.hold,target_controls.sustain,target_controls.release,target_controls.fade_in,target_controls.fade_out,target_controls.fade_in_curve,target_controls.fade_out_curve=start_pos,end_pos,attack,hold,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve
         if target_controls.envelope_mode=="adsr" then target_controls.decay=decay else target_controls.ahd_decay=decay end
      end,true)
     end
+    self:envelope_value_row(path,controls,avail,"quick_env")
   end
      r.ImGui_Separator(c)
      local playback_gap=3
@@ -3071,7 +3144,7 @@ function UI:pads()
        return hit
      end
      local gate_mode=controls.playback_mode=="gate"
-     if playback_tab("quick_playback_one","ONE SHOT",70,not gate_mode,"One Shot: play the full sample") then self:apply_selected_pad_controls({playback_mode="one_shot"},true) end
+     if playback_tab("quick_playback_one","ONE SHOT",70,not gate_mode,"One Shot: ignore note-off; ADSR Release is inactive. Playback ends at the sample boundary or when the envelope reaches silence.") then self:apply_selected_pad_controls({playback_mode="one_shot"},true) end
      r.ImGui_SameLine(c,0,playback_gap)
      if playback_tab("quick_playback_gate","GATE",38,gate_mode,"Gate: follow note length and note-off") then self:apply_selected_pad_controls({playback_mode="gate"},true) end
      r.ImGui_SameLine(c,0,playback_gap)
@@ -3110,7 +3183,10 @@ function UI:pads()
     r.ImGui_SameLine(c,0,8)
     for index,item in ipairs(engine_knobs) do
       if index>1 then r.ImGui_SameLine(c,0,5) end
+      local inactive_release=item.id=="gate_release" and (not gate_mode or envelope_enabled and envelope_mode=="adsr")
+      r.ImGui_BeginDisabled(c,inactive_release)
       local did,next_value,label_clicked=self:knob("##quick_engine_"..item.id,item.label,item.value,item.default,knob_size,{minimum=item.min,maximum=item.max,wheel_step=item.step,formatter=item.format,label_clickable=item.label_clickable,label_color=item.label_clickable and C.playhead or nil})
+      r.ImGui_EndDisabled(c)
       if did then self:apply_selected_pad_control_edit(function(target_controls) item.store(target_controls,next_value) end,true) end
       if item.id=="filter_cutoff" and label_clicked then
         local next_type=(filter_type_index(controls.filter_type)+1)%#FILTER_TYPES
@@ -3478,6 +3554,77 @@ function UI:instrument_pad_grid(width,height)
   self:end_panel(visible)
 end
 
+function UI:envelope_value_row(path,controls,width,id)
+  local r,c=self.host,self.ctx
+  local adsr=controls.envelope_mode=="adsr"
+  local fields={{"FADE IN","fade_in",envelope.FADE_MAX_SECONDS,1},{"FADE OUT","fade_out",envelope.FADE_MAX_SECONDS,1},{"ATTACK","attack",envelope.ATTACK_MAX_SECONDS,1}}
+  if adsr then
+    fields[#fields+1]={"DECAY","decay",envelope.DECAY_MAX_SECONDS,10}
+    fields[#fields+1]={"SUSTAIN","sustain",false,.5}
+    fields[#fields+1]={"RELEASE","release",envelope.RELEASE_MAX_SECONDS,1}
+  else
+    fields[#fields+1]={"HOLD","hold",envelope.HOLD_MAX_SECONDS,1}
+    fields[#fields+1]={"DECAY","ahd_decay",envelope.DECAY_MAX_SECONDS,10}
+  end
+  local duration=math.max(.001,(self.waveform_duration and self.waveform_duration[path or ""]) or 1)
+  local transpose,cents=pad_pitch_values(controls)
+  local playable=duration*math.max(.001,(controls.sample_end or 1)-(controls.sample_start or 0))/math.max(.000001,2^((transpose+cents/100)/12))
+  local field_width=math.max(1,(width-(#fields-1)*4)/#fields)
+  local row_x,row_y=r.ImGui_GetCursorPos(c)
+  for i,f in ipairs(fields) do
+    if i>1 then r.ImGui_SameLine(c,0,4) end
+    r.ImGui_SetCursorPos(c,row_x+(i-1)*(field_width+4),row_y)
+    r.ImGui_BeginGroup(c)
+    r.ImGui_AlignTextToFramePadding(c)
+    r.ImGui_TextDisabled(c,f[1])
+    local default=(f[2]=="decay" or f[2]=="ahd_decay") and envelope.time_control(playable*(adsr and DEFAULT_ADSR_DECAY_POSITION or DEFAULT_AHD_DECAY_POSITION),f[3]) or DEFAULTS[f[2]] or 0
+    local current=controls[f[2]]
+    if current==nil then
+      current=(f[2]=="decay" or f[2]=="ahd_decay") and (f[2]=="ahd_decay" and controls.decay or envelope.DEFAULT_DECAY_CONTROL) or default
+      if current==nil then current=envelope.DEFAULT_DECAY_CONTROL end
+    end
+    local value=f[3] and envelope.time_seconds(current,f[3])*1000 or math.max(envelope.SUSTAIN_FLOOR_DB,envelope.sustain_db(current))
+    local minimum,maximum=f[3] and 0 or envelope.SUSTAIN_FLOOR_DB,f[3] and f[3]*1000 or 0
+    local _,shift=self:key_modifiers()
+    local step=f[4]*(shift and .1 or 1)
+    r.ImGui_SetNextItemWidth(c,field_width)
+    local format=f[3] and "%.1f ms" or (current==0 and "-inf dB" or "%.1f dB")
+    local changed,next_value=r.ImGui_DragDouble(c,"##"..id..f[2],value,step,minimum,maximum,format)
+    local hovered=r.ImGui_IsItemHovered(c)
+    -- Register ownership before reading the wheel, including at value limits.
+    if hovered and r.ImGui_SetItemUsingMouseWheel then r.ImGui_SetItemUsingMouseWheel(c) end
+    self.envelope_field_scroll=self.envelope_field_scroll or {}
+    local scroll_key=id..f[2]
+    local wheel=hovered and r.ImGui_GetMouseWheel and r.ImGui_GetMouseWheel(c) or 0
+    local wheel_changed,wheel_value=self:wheel_adjust(next_value,minimum,maximum,step,false,false)
+    if wheel~=0 and r.ImGui_SetScrollY and self.envelope_field_scroll[scroll_key] then
+      r.ImGui_SetScrollY(c,self.envelope_field_scroll[scroll_key])
+    elseif hovered and r.ImGui_GetScrollY then
+      self.envelope_field_scroll[scroll_key]=r.ImGui_GetScrollY(c)
+    end
+    if wheel_changed then changed,next_value=true,wheel_value end
+    local reset=hovered and r.ImGui_IsMouseClicked(c,1)
+    local hint="Drag or scroll to adjust; Shift for fine control\nDouble-click or Ctrl-click to type; right-click to reset"
+    if f[2]=="fade_in" or f[2]=="fade_out" then
+      hint=hint.."\nSource time: pitch changes the audible fade duration. Zero bypasses this fade."
+    else
+      if not(controls.envelope_enabled==true or controls.envelope_enabled==1) then hint=hint.."\nEnvelope is bypassed. Values can be prepared before enabling it." end
+      if f[2]=="release" then hint=hint.."\nStarts at Gate note-off; inactive in One Shot. Zero uses the engine's 1 ms safety release."
+      elseif f[2]=="sustain" then hint=hint.."\n0 dB is full level; -inf is silence. Sustain does not loop the sample.\nLegacy ADSR holds full level when Decay is zero."
+      elseif f[2]=="ahd_decay" then hint=hint.."\nAHD decays to silence; Envelope Off is the neutral setting."
+      end
+    end
+    self:tooltip(hint)
+    if changed or reset then
+      next_value=math.max(minimum,math.min(maximum,next_value))
+      local stored=reset and default or (f[3] and envelope.time_control(next_value/1000,f[3]) or envelope.sustain_from_db(next_value))
+      local key=f[2]
+      self:apply_selected_pad_control_edit(function(target)target[key]=stored end,true)
+    end
+    r.ImGui_EndGroup(c)
+  end
+end
+
 function UI:instrument_wave_panel(width,height)
   local r,c,app=self.host,self.ctx,self.app
   local visible=self:begin_unframed("##instrumentwave",width,height,no_scroll_flags(r))
@@ -3490,8 +3637,9 @@ function UI:instrument_wave_panel(width,height)
     if renamed then app:rename_pad(name) end
     r.ImGui_SameLine(c); r.ImGui_TextDisabled(c,state.sample_label(pad))
     local available=r.ImGui_GetContentRegionAvail(c)
-    local trim_changed,trim_start,trim_end,attack,hold,decay,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve=self:waveform(path,available,math.max(82,height-82),controls.sample_start or DEFAULTS.sample_start,controls.sample_end or DEFAULTS.sample_end,"##instrument_waveform",controls)
+    local trim_changed,trim_start,trim_end,attack,hold,decay,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve=self:waveform(path,available,math.max(48,height-124),controls.sample_start or DEFAULTS.sample_start,controls.sample_end or DEFAULTS.sample_end,"##instrument_waveform",controls)
     if trim_changed then controls.sample_start,controls.sample_end,controls.attack,controls.hold,controls.sustain,controls.release,controls.fade_in,controls.fade_out,controls.fade_in_curve,controls.fade_out_curve=trim_start,trim_end,attack,hold,sustain,release,fade_in,fade_out,fade_in_curve,fade_out_curve;if controls.envelope_mode=="adsr" then controls.decay=decay else controls.ahd_decay=decay end;self:queue_live_pad_controls() end
+    self:envelope_value_row(path,controls,available,"instrument_env")
     if self:icon_button("##instrument_load","load","Load or replace sample",30,27,false,C.playhead) then app:load_selected_sample() end
     r.ImGui_SameLine(c);if self:icon_button("##instrument_previous_sample","previous","Previous sample in folder",28,27) then app:cycle_sample(-1) end
     r.ImGui_SameLine(c);if self:icon_button("##instrument_next_sample","next","Next sample in folder",28,27) then app:cycle_sample(1) end
@@ -4568,6 +4716,7 @@ function UI:frame()
   local publish_started=r.time_precise();self.app:process_publish(4096);self:perf_record("publish slice",r.time_precise()-publish_started)
   section_started=self:perf_begin()
   self.app:poll_sampler_loads(4)
+  self.app:process_media_collection()
   self:perf_end("sampler status poll",section_started)
   self:perf_record("frame total",r.time_precise()-frame_started)
   return self.open
