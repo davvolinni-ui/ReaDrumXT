@@ -141,6 +141,7 @@ INPUT_BEND=1269000;INPUT_PAN=1269020;INPUT_SLIDE=1269040;INPUT_SHIFT=1269060;INP
 // loop queue, groove state, input state, and serialized snapshot to overlap.
 STEPS=1700000;VARS=1460000;LANE_GROOVE=1461000;GROOVES=1463000;
 INPUT_BEND=1481000;INPUT_PAN=1481020;INPUT_SLIDE=1481040;INPUT_SHIFT=1481060;INPUT_GLIDE=1481080;INPUT_CUTOFF=1481100;INPUT_RESONANCE=1481120;INPUT_DRIVE=1481140;
+LIVE_NOTE_MAP=1481200;MAPPING_SEEN=1481400;i=0;loop(128,LIVE_NOTE_MAP[i]=(i-LIVE_BASE+128)%128;i+=1;);
  i=0;loop(16,INPUT_BEND[i]=8192;INPUT_PAN[i]=1001;INPUT_SLIDE[i]=0;INPUT_SHIFT[i]=0;INPUT_GLIDE[i]=-1;INPUT_CUTOFF[i]=-1;INPUT_RESONANCE[i]=-1;INPUT_DRIVE[i]=-1;i+=1;);
 PERSIST_MAGIC=52446;PERSIST_VERSION=2;PERSIST_TRAILER=64245;SER_RUNTIME=2000000;SER_RUNTIME_CAP=262144;SER_MAP=2262144;SER_MAP_CAP=20000;
 // 8192 twelve-word events no longer fit below pending runtime at 100000.
@@ -206,6 +207,7 @@ function build_scheduler()local(pos,tag,n,f,li,si,cur,step_cursor,p,g,j,b,vi,hot
   timing_changed=0;
   hot?(i=0;loop(old_lane_count,b=i*LANE_WORDS;hb=i*HOT_LANE_WORDS;HOT_LANES[hb]=LANES[b];HOT_LANES[hb+1]=LANES[b+9];HOT_LANES[hb+2]=LANES[b+10];HOT_LANES[hb+3]=LANES[b+3];HOT_LANES[hb+4]=LANES[b+4];HOT_LANES[hb+5]=LANES[b+5];HOT_LANES[hb+6]=LANES[b+6];i+=1;););
   lane_count=0;group_count=0;var_count=0;pos=17;cur=-1;step_cursor=0;scheduler_rng=1;(!(play_state&1)||runtime_variation<1||runtime_variation>400000[9])?(runtime_variation=400000[6];pending_variation=0;);memset(PADMAP,0,128*PAD_WORDS);memset(PADGROUP,0,128);memset(LANE_GROOVE,0,SHADOW_LANE_CAP);memset(GROOVES,0,64*GROOVE_WORDS);
+  j=0;loop(128,LIVE_NOTE_MAP[j]=(j-LIVE_BASE+128)%128;j+=1;);
   while(pos<active_words)(
     tag=400000[pos-1];n=400000[pos];f=pos+1;
     tag==1?(scheduler_rng=max(1,400000[f+1]%(MOD-1));):
@@ -223,6 +225,9 @@ function build_scheduler()local(pos,tag,n,f,li,si,cur,step_cursor,p,g,j,b,vi,hot
     ):
     tag==5&&(n==15||n==16||n==17||n==18||n==21)?(
       p=(400000[f]-1)*PAD_WORDS;PADMAP[p]=400000[f+2];PADMAP[p+1]=400000[f+3];PADMAP[p+2]=400000[f+5];j=0;loop(4,PADMAP[p+3+j]=400000[f+6+j]-1;j+=1;);PADMAP[p+7]=400000[f+10];j=0;loop(4,PADMAP[p+8+j]=400000[f+11+j]-1;j+=1;);PADMAP[p+12]=n>=16?400000[f+15]:0;PADMAP[p+13]=n>=17?400000[f+16]:1;PADMAP[p+14]=n>=18?400000[f+17]:1;PADMAP[p+15]=n>=21?400000[f+18]:PPM;PADMAP[p+16]=n>=21?400000[f+19]:0;PADMAP[p+17]=n>=21?400000[f+20]:0;
+    ):
+    tag==9&&n==128?(
+      j=0;loop(128,LIVE_NOTE_MAP[400000[f+j]|0]=j;j+=1;);
     ):
     tag==7&&n==24&&group_count<GROUP_CAP?(
       g=group_count;b=g*GROUP_WORDS;j=0;loop(24,GROUPS[b+j]=400000[f+j];j+=1;);GROUPS[b]-=1;j=0;loop(16,GROUPS[b+8+j]-=1;j+=1;);GROUPS[b+24]=0;GROUPS[b+25]=1;GROUPS[b+26]=-1;GROUPS[b+27]=max(1,abs(GROUPS[b+4])%(MOD-1));j=0;loop(GROUPS[b+7],PADGROUP[GROUPS[b+8+j]]=g+1;j+=1;);group_count+=1;
@@ -265,6 +270,10 @@ function budget_pending()local(ok,pos,tag,rec_len,f,cur,active,expected,seen,ste
    tag=100000[pos-1];rec_len=100000[pos];f=pos+1;
     (rec_len<0||rec_len!=floor(rec_len)||pos+1+rec_len>pending_words)?(ok=0;slider53=7;):tag==5?(
       (rec_len!=15&&rec_len!=16&&rec_len!=17&&rec_len!=18&&rec_len!=21)||!budget_int32(100000[f])||100000[f]<1||100000[f]>128||!budget_int32(100000[f+5])||100000[f+5]<0||100000[f+5]>4?(ok=0;slider53=7;):(BUDGET_LINKS[(100000[f]|0)-1]=100000[f+5];);
+    ):tag==9?(
+      rec_len!=128?(ok=0;slider53=7;):(
+        memset(MAPPING_SEEN,0,128);j=0;loop(128,p=100000[f+j];!budget_int32(p)||p<0||p>127?(ok=0;slider53=7;):(MAPPING_SEEN[p]?(ok=0;slider53=7;):MAPPING_SEEN[p]=1;);j+=1;);
+      );
     ):tag==2?(
      groove_maximum=0;groove_amount=0;
     ):tag==8?(
@@ -610,7 +619,7 @@ while(midirecv(off,m1,m2,m3))(
     arrangement_gate=arrangement_gate_count>0;
   ):
   slider66>=0.5?(
-    ch=m1&15;input_key=ch*128+(m2|0);live_pad=(m2-LIVE_BASE+128)%128;
+    ch=m1&15;input_key=ch*128+(m2|0);live_pad=LIVE_NOTE_MAP[m2|0];
     st==224?(INPUT_BEND[ch]=(m2|0)+((m3|0)<<7)):
     st==176&&m2==5?(INPUT_GLIDE[ch]=m3*.5/127):
     st==176&&m2==10?(INPUT_PAN[ch]=(m3*200/127)-100):

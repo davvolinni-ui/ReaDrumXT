@@ -13,3 +13,17 @@ tools/
 *.readrum
 ReaDrum-error.log
 
+# Private engineering material and local artifacts
+docs/
+.agents/
+.codex/
+SNAPSHOT_PROTOCOL.md
+*.ps1
+*_spec.lua
+*probe*
+*Probe*
+*.backup.*
+*.rpp
+*.rpp-bak
+*.zip
+

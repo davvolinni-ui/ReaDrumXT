@@ -545,6 +545,7 @@ function M.new_rack(opts, id_factory)
     global_velocity_sensitivity = option(opts, "global_velocity_sensitivity", 100),
     accentuator = option(opts, "accentuator", { enabled = true, amount = 100, bands = { 0, 0, 0, 0 } }),
     selected_bank = option(opts, "selected_bank", 1),
+    midi_mapping = opts.midi_mapping and deep_copy(opts.midi_mapping) or nil,
     pad_order = pad_order,
     pads = pads,
     outputs = outputs,
@@ -979,6 +980,10 @@ function M.validate_rack(rack, path)
     return fail(path .. ".schema_version", "unsupported schema version " .. tostring(rack.schema_version) .. "; expected " .. M.SCHEMA_VERSION)
   end
   if not is_non_empty_string(rack.name) then return fail(path .. ".name", "expected a non-empty name") end
+  if rack.midi_mapping~=nil then
+    local valid,why=require("ReaDrum.core.midi_mapping").validate(rack.midi_mapping)
+    if not valid then return fail(path..".midi_mapping",why) end
+  end
   if rack.accent_multiplier == nil then rack.accent_multiplier = 130 end
   ok, err = validate_number(rack.accent_multiplier, path .. ".accent_multiplier", 100, 200, false)
   if not ok then return nil, err end

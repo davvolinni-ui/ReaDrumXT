@@ -48,7 +48,7 @@ local function desired_objects(rack, pad_ids, include_pad_tracks, ensure_aux)
   if not include_pad_tracks then
     local used={};for _,pad in ipairs(rack.pads)do if pad.sample~=false then used[pad.output_id]=true end end
     for _,output in ipairs(rack.outputs or {})do if output.id=="main"or used[output.id]then
-      desired[#desired+1]={kind="output",object_id=output.id,name=output.id=="main"and "Output 1"or output.name}
+      desired[#desired+1]={kind="output",object_id=output.id,name=output.id=="main"and output.name=="Main"and "Output 1"or output.name}
     end end
   end
   for _,aux_id in ipairs({"aux_a","aux_b"}) do if ensure_aux and ensure_aux[aux_id] then
@@ -124,6 +124,7 @@ local function create_track(adapter, spec, rack_id, report, found)
     logical_index = spec.logical_index,
   })
   adapter:set_track_string(track, "P_NAME", spec.name)
+  if spec.kind=="output" then adapter:set_track_string(track,"P_EXT:READRUM_OUTPUT_NAME",spec.name) end
   if spec.kind == "sequencer" then
     adapter:set_track_value(track, "B_MAINSEND", 0)
     adapter:set_track_value(track, "I_RECINPUT", 6112) -- all MIDI devices, all channels
@@ -406,6 +407,16 @@ function M.reconcile(adapter, rack, options)
     for _, spec in ipairs(desired_objects(rack, options.pad_ids, not use_bank_engine,options.ensure_aux)) do
       local object_key = key(spec.kind, spec.object_id)
       if not found[object_key] then found[object_key] = create_track(adapter, spec, rack.id, report,found) end
+      if spec.kind=="output" then
+        local track=found[object_key]
+        local previous=adapter:get_track_string(track,"P_EXT:READRUM_OUTPUT_NAME")
+        -- Only a model name edit (including Undo/Redo) requests a rename.
+        -- Leave manual REAPER track names alone during normal reconciliation.
+        if previous and previous~="" and previous~=spec.name then
+          adapter:set_track_string(track,"P_NAME",spec.name);report.changed=true
+        end
+        if previous~=spec.name then adapter:set_track_string(track,"P_EXT:READRUM_OUTPUT_NAME",spec.name) end
+      end
     end
     if use_bank_engine then
       local wanted={};for _,output in ipairs(rack.outputs or {}) do wanted[output.id]=true end

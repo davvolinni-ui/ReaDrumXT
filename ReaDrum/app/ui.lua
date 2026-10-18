@@ -9,6 +9,7 @@ local diagnostics = require("ReaDrum.reaper.diagnostics")
 local playback_capture = require("ReaDrum.reaper.playback_capture")
 local envelope_math = envelope
 local waveform_view = require("ReaDrum.core.waveform_view")
+local midi_mapping = require("ReaDrum.core.midi_mapping")
 
 local module_source=debug.getinfo(1,"S").source:sub(2)
 local product_directory=assert(module_source:match("^(.*)[/\\]app[/\\]ui%.lua$"),"ReaDrum UI must remain inside Scripts/ReaDrum/app")
@@ -87,7 +88,6 @@ end
 
 local GRID_STEP_X,GRID_CELL_WIDTH,GRID_CELL_STRIDE=359,27,32
 local LANE_TOOLBAR_HEIGHT=24
-local PAD_MIDI_BASE=36 -- C2 in REAPER's default octave naming
 local WAVEFORM_PEAK_COUNT=4096
 
 local PROPERTIES = {
@@ -139,9 +139,6 @@ local function note_name(note)
   return names[(note % 12)+1] .. tostring(math.floor(note/12)-1)
 end
 
--- One-channel 128-pad map, rotated so Pad 1 begins at REAPER C2 (note 36).
--- After note 127 the remaining pads wrap through notes 0..35 exactly once.
-local function pad_midi_note(index) return (PAD_MIDI_BASE+(index-1))%128 end
 local function pad_bank_letter(index) return string.char(65+math.floor((index-1)/16)) end
 
 local function pad_color(index,pad)
@@ -225,7 +222,7 @@ function UI.new(host, app)
     property_paint_active=false, property_paint_lane=false, property_paint_key=false, property_paint_position=false, property_paint_value=false,
     property_line_active=false, property_line_lane=false, property_line_key=false, property_line_position=false, property_line_value=false,
     property_reset_active=false, property_reset_lane=false, property_reset_key=false, property_reset_position=false,
-    follow_played_pad=true, recent_midi_signature=false,
+    follow_played_pad=true,
     pad_drag_select=false, pad_drag_origin=false, pad_drag_moved=false, pad_rearrange_drag=false, pad_selection_anchor=false, lane_press_latch={},
     pad_right_drag=false, pad_right_drag_origin=false, pad_right_drag_moved=false, pad_right_drag_base={}, pad_rects={},
     piano_selected_steps={}, piano_selection_pad=false, piano_pointer=false, piano_marquee=false,
@@ -571,23 +568,54 @@ function UI:flush_audition(force)
   end
 end
 
+function UI:start_midi_learn(index,last)
+  if not self.host.MIDI_GetRecentInputEvent then self.app.status="MIDI Learn is unavailable in this REAPER version";return end
+  self.midi_last_sequence=self.host.MIDI_GetRecentInputEvent(0) or 0
+  self.midi_learn={index=index,last=last or index,seen={},rack=self.app.rack}
+  self.midi_mapping_open=true
+  self.midi_mapping_bank=math.floor((index-1)/16)+1
+  self.app.status="MIDI Learn: play the controller pad for pad "..index
+end
+function UI:learn_midi_message(message,device)
+  local learn=self.midi_learn
+  if not learn or type(message)~="string" or #message<3 then return false end
+  if learn.rack~=self.app.rack then self.midi_learn=nil;return false end
+  local status,note,velocity=message:byte(1,3)
+  if (status&0xF0)~=0x90 or velocity==0 or note>127 then return false end
+  if learn.device and learn.device~=device then return false end
+  if learn.seen[note] then self.app.status="That note was already learned; play a different controller pad";return true end
+  learn.device=device;learn.seen[note]=true
+  self.app:set_pad_midi_note(learn.index,note)
+  if learn.index>=learn.last then self.midi_learn=nil;self.app.status="MIDI Learn complete — save as a preset to reuse this layout"
+  else learn.index=learn.index+1;self.app.status="MIDI Learn: play the controller pad for pad "..learn.index end
+  return true
+end
 function UI:poll_played_pad()
   local r,app=self.host,self.app
   if not r.MIDI_GetRecentInputEvent then return end
-  local ok,message,timestamp,device=r.MIDI_GetRecentInputEvent(0)
-  if not ok or type(message)~="string" or #message<3 then return end
-  local status,note,velocity=message:byte(1,3)
-  local signature=table.concat({tostring(timestamp),tostring(device),tostring(status),tostring(note),tostring(velocity)},":")
-  if signature==self.recent_midi_signature then return end
-  -- Consume every global input event even while this rack is inactive. If the
-  -- signature were left stale, selecting/auto-arming the MIDI track could make
-  -- the last note played into another instrument focus a ReaDrum pad.
-  self.recent_midi_signature=signature
-  if not self.follow_played_pad or not r.GetMediaTrackInfo_Value then return end
-  local track=app:find_track("sequencer")
-  if not track or (r.GetMediaTrackInfo_Value(track,"I_RECARM") or 0)<.5 then return end
-  if (status&0xF0)==0x90 and velocity>0 and note>=0 and note<=127 then
-    app:select_pad(((note-PAD_MIDI_BASE+128)%128)+1)
+  local sequence,message,_,device=r.MIDI_GetRecentInputEvent(0)
+  if not sequence or sequence==0 then return end
+  if self.midi_last_sequence==nil then self.midi_last_sequence=sequence;return end
+  if sequence==self.midi_last_sequence then return end
+  local events={};local newest=sequence
+  for index=0,127 do
+    if index>0 then sequence,message,_,device=r.MIDI_GetRecentInputEvent(index) end
+    if not sequence or sequence==0 or sequence==self.midi_last_sequence then break end
+    events[#events+1]={message=message,device=device}
+  end
+  self.midi_last_sequence=newest
+  local track=self.follow_played_pad and r.GetMediaTrackInfo_Value and app:find_track("sequencer")
+  local follow=track and (r.GetMediaTrackInfo_Value(track,"I_RECARM") or 0)>=.5
+  local learning=self.midi_learn~=nil
+  for index=#events,1,-1 do
+    local event=events[index]
+    if learning then self:learn_midi_message(event.message,event.device)
+    elseif follow and type(event.message)=="string" and #event.message>=3 then
+      local status,note,velocity=event.message:byte(1,3)
+      if (status&0xF0)==0x90 and velocity>0 and note<=127 then
+        local target=app:pad_for_midi_note(note);if target then app:select_pad(target) end
+      end
+    end
   end
 end
 
@@ -1051,7 +1079,12 @@ function UI:pad_context_menu(index,context)
   app:select_pad(index);self.selected_pads[index]=true
   local pad=app:pad(index)
   local function section(label) r.ImGui_Separator(c);r.ImGui_TextDisabled(c,label) end
-  r.ImGui_TextDisabled(c,(context=="lane" and "SEQUENCER LANE  •  " or "PAD  •  ")..(pad.name or ("Pad "..index)))
+  r.ImGui_SetNextItemWidth(c,200)
+  local renamed,name=r.ImGui_InputText(c,"##"..context.."_context_name_"..index,pad.name or ("Pad "..index))
+  if renamed then app:rename_pad(name) end
+  self:tooltip("Rename this pad")
+  if r.ImGui_MenuItem(c,"Learn MIDI note…") then self:start_midi_learn(index) end
+  if r.ImGui_MenuItem(c,"MIDI mapping…") then self.midi_mapping_open=true;self.midi_mapping_bank=math.floor((index-1)/16)+1 end
   if context=="lane" then
     section("STEPS")
     local lane_targets=self:selected_pad_indices();if #lane_targets==0 then lane_targets={index} end
@@ -1687,6 +1720,9 @@ function UI:top_toolbar()
       r.ImGui_Separator(c)
       if r.ImGui_MenuItem(c,"Route bank "..string.char(64+app.rack.selected_bank).." pads to outputs 1–16") then app:route_bank_to_outputs() end
       self:tooltip("Assign the current bank's pad positions 1–16 to the matching outputs.\nKeep output names and other banks' assignments unchanged.\nEmpty pads retain their assignment for later sample loading.")
+      if r.ImGui_MenuItem(c,"Auto-name outputs from pads") then app:auto_name_outputs() end
+      self:tooltip("Run once to name outputs from loaded pads across all banks.\nShared outputs combine distinct names with +.\nOutputs without loaded pads keep their names. Names stay unchanged until you run this again.")
+      if r.ImGui_MenuItem(c,"MIDI mapping…") then self.midi_mapping_open=true end
       r.ImGui_Separator(c)
       if r.ImGui_MenuItem(c,"Preferences") then open_preferences=true end
       r.ImGui_EndPopup(c)
@@ -2284,7 +2320,7 @@ function UI:sequence_grid(height)
       local fixed_left=r.ImGui_GetCursorScreenPos(c)
       local selected=self.selected_pads[index] or index==app.selected_pad
       local play_step=self:lane_play_step(lane)
-      local label=string.format("%s %s  %-12s   ##lane%d",pad_bank_letter(index),note_name(pad_midi_note(index)),(pad.name or ("Pad "..index)):sub(1,12),index)
+      local label=string.format("%s %s  %-12s   ##lane%d",pad_bank_letter(index),note_name(app:pad_midi_note(index)),(pad.name or ("Pad "..index)):sub(1,12),index)
       local row_color=pad_color(index,pad)
       local lane_released,badge_active,accent_clicked=self:lane_button(label,190,25,row_color,selected,lane.accentuator_enabled==true)
       local lane_triggered
@@ -2953,7 +2989,7 @@ function UI:pads()
       if col>0 then r.ImGui_SameLine(c) end
       local index=first+(3-row)*4+col; local pad=app:pad(index)
       local chosen=self.selected_pads[index]
-      local label=string.format("%s\n%s##pad%d",note_name(pad_midi_note(index)),state.sample_label(pad):sub(1,12),index)
+      local label=string.format("%s\n%s##pad%d",note_name(app:pad_midi_note(index)),(pad.sample and pad.name or "Empty"):sub(1,12),index)
       local border=pad.sample~=false and pad_color(index,pad) or C.border
       local clicked=self:pad_button(label,pad_width,pad_height,border,index==app.selected_pad or chosen,self:pad_triggered(index))
       local sample_path=type(pad.sample)=="table" and pad.sample.path or pad.sample
@@ -3503,7 +3539,7 @@ function UI:mixer_view(width,height)
     local function place(callback)
       if not first then r.ImGui_SameLine(c) end;first=false;callback()
     end
-    if self.mixer_show_outputs then for _,output in ipairs(outputs) do place(function()self:mixer_bus_strip(output.id,output.id=="main"and "OUT 1"or output.name,app:output_track(output.id),strip_width,body_height-18,output)end) end end
+    if self.mixer_show_outputs then for _,output in ipairs(outputs) do place(function()self:mixer_bus_strip(output.id,output.id=="main"and output.name=="Main"and "OUT 1"or output.name,app:output_track(output.id),strip_width,body_height-18,output)end) end end
     if self.mixer_show_aux then
       place(function()self:mixer_bus_strip("aux_a","AUX A",app:aux_track("aux_a"),strip_width,body_height-18)end)
       place(function()self:mixer_bus_strip("aux_b","AUX B",app:aux_track("aux_b"),strip_width,body_height-18)end)
@@ -3540,7 +3576,7 @@ function UI:instrument_pad_grid(width,height)
         local group=app:round_robin_for_pad(index);local badges={}
         if app:pad_muted(index) then badges[#badges+1]="M" end;if app:pad_soloed(index) then badges[#badges+1]="S" end
         if #(pad.simultaneous_play_targets or {})>0 then badges[#badges+1]="L"..#pad.simultaneous_play_targets end;if group then badges[#badges+1]="RR" end
-        local label=string.format("%s\n%s\n%s##instrumentpad%d",note_name(pad_midi_note(index)),pad.name or "Pad",table.concat(badges,"  "),index)
+        local label=string.format("%s\n%s\n%s##instrumentpad%d",note_name(app:pad_midi_note(index)),pad.name or "Pad",table.concat(badges,"  "),index)
         local border=pad.sample~=false and pad_color(index,pad) or C.border
         local clicked=self:pad_button(label,pad_width,pad_height,border,index==app.selected_pad or chosen,self:pad_triggered(index))
         local sample_path=type(pad.sample)=="table" and pad.sample.path or pad.sample
@@ -3631,7 +3667,7 @@ function UI:instrument_wave_panel(width,height)
   if visible then
     local pad=app:pad(); local controls=pad.default_controls
     local path=type(pad.sample)=="table" and pad.sample.path or pad.sample
-    r.ImGui_TextDisabled(c,string.format("Bank %s  %s",pad_bank_letter(pad.logical_index),note_name(pad_midi_note(pad.logical_index))))
+    r.ImGui_TextDisabled(c,string.format("Bank %s  %s",pad_bank_letter(pad.logical_index),note_name(app:pad_midi_note(pad.logical_index))))
     r.ImGui_SameLine(c); r.ImGui_SetNextItemWidth(c,210)
     local renamed,name=r.ImGui_InputText(c,"##instrument_pad_name",pad.name or "Pad")
     if renamed then app:rename_pad(name) end
@@ -3768,7 +3804,7 @@ function UI:instrument_sampler_docked(width,height)
   if visible then
     local pad=app:pad();local controls=pad.default_controls
     r.ImGui_TextDisabled(c,"PAD")
-    r.ImGui_SameLine(c);r.ImGui_Text(c,string.format("%s  %s",note_name(pad_midi_note(pad.logical_index)),pad.name or "Pad"))
+    r.ImGui_SameLine(c);r.ImGui_Text(c,string.format("%s  %s",note_name(app:pad_midi_note(pad.logical_index)),pad.name or "Pad"))
     r.ImGui_SameLine(c);if self:icon_button("##dockedplay","play","Audition pad",28,24) then self:audition_pad(app.selected_pad,110) end
     r.ImGui_SameLine(c);if self:icon_button("##dockedmute","mute","Mute pad",28,24,app:pad_muted(app.selected_pad),app:pad_muted(app.selected_pad) and C.red or nil) then app:toggle_pad_mute(app.selected_pad) end
     r.ImGui_SameLine(c);if self:icon_button("##dockedsolo","solo","Solo pad",28,24,app:pad_soloed(app.selected_pad),app:pad_soloed(app.selected_pad) and C.accent or nil) then app:toggle_pad_solo(app.selected_pad) end
@@ -3867,6 +3903,87 @@ function UI:instrument_view(width,height)
   self:end_panel(editor_visible)
   r.ImGui_SameLine(c)
   self:instrument_master(master_width,height)
+end
+
+function UI:midi_mapping_window()
+  if not self.midi_mapping_open then return end
+  local r,c,app=self.host,self.ctx,self.app
+  r.ImGui_SetNextWindowSize(c,570,690,r.ImGui_Cond_FirstUseEver())
+  local visible,open=r.ImGui_Begin(c,"MIDI mapping",self.midi_mapping_open,r.ImGui_WindowFlags_NoCollapse())
+  self.midi_mapping_open=open
+  if visible then
+    local library,warning=midi_mapping.load_library(r)
+    local mapping=app.rack.midi_mapping or midi_mapping.factory()
+    local saved=midi_mapping.find(library,mapping.name)
+    local matches=midi_mapping.matches(mapping,saved)
+    r.ImGui_TextDisabled(c,"PROJECT MAPPING")
+    r.ImGui_SetNextItemWidth(c,-1)
+    if r.ImGui_BeginCombo(c,"##midi_mapping_preset",mapping.name..(matches and "" or " (edited)")) then
+      local function option(name)
+        if r.ImGui_Selectable(c,name,mapping.name==name and matches) then
+          self.midi_learn=nil;app:apply_midi_mapping(name);self.midi_preset_name=name
+        end
+      end
+      option(midi_mapping.FACTORY)
+      for _,preset in ipairs(library.presets) do option(preset.name) end
+      r.ImGui_EndCombo(c)
+    end
+    r.ImGui_TextDisabled(c,"Default for new projects: "..library.default)
+    self.midi_preset_name=self.midi_preset_name or (mapping.name~=midi_mapping.FACTORY and mapping.name or "My controller")
+    r.ImGui_SetNextItemWidth(c,-1)
+    local _,value=r.ImGui_InputText(c,"##midi_preset_name",self.midi_preset_name);self.midi_preset_name=value
+    if self:button("Save preset",100,25) then app:save_midi_mapping(self.midi_preset_name) end
+    self:tooltip("Save this project's layout under the name above. Using an existing name replaces that preset.")
+    r.ImGui_SameLine(c)
+    if self:button("Use as default",120,25) then
+      if matches then app:set_default_midi_mapping(mapping.name)
+      else app.status="Save this edited mapping as a preset before making it the default" end
+    end
+    self:tooltip("Remember this saved preset for new projects. Existing projects retain their own mappings.")
+    if mapping.name~=midi_mapping.FACTORY and saved then
+      r.ImGui_SameLine(c)
+      if self:button("Delete preset",110,25) then app:delete_midi_mapping(mapping.name) end
+      self:tooltip("Remove the saved preset. This project's layout is kept.")
+    end
+    if warning then r.ImGui_TextWrapped(c,warning) end
+    r.ImGui_Separator(c)
+    self.midi_mapping_bank=self.midi_mapping_bank or app.rack.selected_bank
+    for bank=1,8 do
+      if bank>1 then r.ImGui_SameLine(c,0,3) end
+      if self:button(string.char(64+bank).."##mappingbank",30,25,bank==self.midi_mapping_bank and C.selected or nil) then
+        self.midi_mapping_bank=bank;self.midi_learn=nil
+      end
+    end
+    local first=(self.midi_mapping_bank-1)*16+1
+    if self:button("Learn bank "..string.char(64+self.midi_mapping_bank),140,25) then self:start_midi_learn(first,first+15) end
+    self:tooltip("Play controller pads in order for positions 1–16. Repeated notes are ignored; one controller is used per learn pass.")
+    r.ImGui_SameLine(c)
+    if self.midi_learn then
+      if self:button("Cancel learning",130,25) then self.midi_learn=nil;app.status="MIDI Learn cancelled; learned assignments kept" end
+    else r.ImGui_TextDisabled(c,"Input: all MIDI channels") end
+    if self.midi_learn then r.ImGui_Text(c,"Listening for pad "..self.midi_learn.index.." — play its controller pad") end
+    local _,remaining=r.ImGui_GetContentRegionAvail(c)
+    local child=self:begin_panel("##mappingnotes",0,math.max(100,remaining-64),controlled_scroll_flags(r))
+    if child then
+      for index=first,first+15 do
+        local pad=app:pad(index)
+        local note=app:pad_midi_note(index)
+        r.ImGui_SetNextItemWidth(c,92)
+        local changed,next_note=r.ImGui_InputInt(c,"##mappednote"..index,note)
+        if changed then self.midi_learn=nil;app:set_pad_midi_note(index,math.max(0,math.min(127,next_note))) end
+        self:tooltip("MIDI note 0–127. An assigned note swaps with its previous pad to keep every note unique.")
+        r.ImGui_SameLine(c)
+        if self:button("Learn##mapping"..index,55,23,self.midi_learn and self.midi_learn.index==index and C.selected or nil) then self:start_midi_learn(index) end
+        r.ImGui_SameLine(c)
+        r.ImGui_Text(c,string.format("%02d  %s  %s",index-first+1,note_name(note),(pad.name or "Pad"):sub(1,28)))
+      end
+    end
+    self:end_panel(child)
+    r.ImGui_TextWrapped(c,app.status or "")
+    r.ImGui_TextDisabled(c,"Save a preset, then use it as the default to reuse it in new projects.")
+  end
+  r.ImGui_End(c)
+  if not open then self.midi_learn=nil end
 end
 
 function UI:right_inspector(width,height)
@@ -4658,6 +4775,7 @@ function UI:frame()
   r.ImGui_End(c)
   section_started=self:perf_begin()
   self:eula_viewer()
+  self:midi_mapping_window()
   r.ImGui_PopStyleVar(c,6)
   r.ImGui_PopStyleColor(c,19)
   self:process_pending_pad_drop()

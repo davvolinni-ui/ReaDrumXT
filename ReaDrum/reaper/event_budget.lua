@@ -126,6 +126,9 @@ local function decode_active(image)
   elseif tag==snapshot.TAG.PAD then
     if n~=15 and n~=16 and n~=17 and n~=18 and n~=21 then return nil,"event budget: invalid PAD length"end;if lane or have_variation or have_pattern then return nil,"event budget: PAD out of order"end
    if not integer(w[f],1,128)or not integer(w[f+5],0,snapshot.MAX_LINKS)then return nil,"event budget: invalid PAD budget field"end;links[w[f]]=1+w[f+5];last_step=false
+  elseif tag==snapshot.TAG.MIDI_MAPPING then
+   if n~=128 or lane or have_variation or have_pattern then return nil,"event budget: invalid MIDI mapping record"end
+   local notes={};for index=0,127 do local note=w[f+index];if not integer(note,0,127)or notes[note]then return nil,"event budget: invalid MIDI mapping note"end;notes[note]=true end
   elseif tag==snapshot.TAG.GROUP then
    if n~=24 then return nil,"event budget: invalid GROUP length"end;if lane or have_variation or have_pattern then return nil,"event budget: GROUP out of order"end
    if not integer(w[f],1,128)or not integer(w[f+1],0,3)or not integer(w[f+2],0,1000000)or not integer(w[f+7],2,snapshot.MAX_GROUP_MEMBERS)then return nil,"event budget: invalid GROUP budget field"end;last_step=false

@@ -2,7 +2,7 @@
 -- Phase 3B protocol v2 immutable payload. Phase 3A sliders are deliberately
 -- not used here: Lua writes a complete gmem page, then publishes its commit.
 local M={MAGIC=52444,VERSION=2,SCHEMA=1,MAX_WORDS=262144,MAX_PATTERNS=8,MAX_VARIATIONS=64,MAX_LANES=128,MAX_STEPS=14000,MAX_GROOVE_STEPS=256,MAX_PADS=128,MAX_LINKS=4,MAX_GROUPS=32,MAX_GROUP_MEMBERS=16,MAX_LOCKS=4096}
-M.TAG={PATTERN=1,VARIATION=2,LANE=3,STEP=4,PAD=5,LOCK=6,GROUP=7,GROOVE=8,END_=255}
+M.TAG={PATTERN=1,VARIATION=2,LANE=3,STEP=4,PAD=5,LOCK=6,GROUP=7,GROOVE=8,MIDI_MAPPING=9,END_=255}
 M.CONDITION={always=0,first=1,not_first=2,every_n=3,fill=4,not_fill=5,previous=6}
 M.QUANT={immediate=0,step=1,beat=2,bar=3,pattern=4}
 M.RR_MODE={sequential=0,ping_pong=1,random=2,random_no_repeat=3}
@@ -25,6 +25,10 @@ function M.encode(rack,opt)
  for pi,p in ipairs(rack.pads or{})do tick();local f={integer(p.logical_index,"Pad.logical_index",1,128),hid(p.id,"Pad.id"),p.choke_group==false and 0 or integer(p.choke_group,"Pad.choke_group",1,32),p.self_choke and 1 or 0,integer(p.polyphony,"Pad.polyphony",1,128),#p.simultaneous_play_targets}
   if #p.simultaneous_play_targets>M.MAX_LINKS or #p.mute_targets>M.MAX_LINKS then die("Pad["..pi.."]","relationship capacity exceeded")end
   for i=1,M.MAX_LINKS do local id=p.simultaneous_play_targets[i];f[#f+1]=id and integer(assert(pads[id],"unknown simultaneous target").logical_index,"target",1,128)or 0 end;f[#f+1]=#p.mute_targets;for i=1,M.MAX_LINKS do local id=p.mute_targets[i];f[#f+1]=id and integer(assert(pads[id],"unknown mute target").logical_index,"target",1,128)or 0 end;local controls=p.default_controls or{};local pan=controls.pan;if pan==nil then pan=.5 end;if type(pan)~="number"or pan<0 or pan>1 then die("Pad["..pi.."].default_controls.pan","normalized number out of range [0,1]")end;local cutoff=math.log(math.max(20,math.min(20000,tonumber(controls.filter_cutoff_hz)or 20000))/20)/math.log(1000);local resonance=math.max(0,math.min(1,tonumber(controls.filter_resonance)or 0));local drive=math.max(0,math.min(1,tonumber(controls.drive)or 0));f[#f+1]=math.floor((pan*2-1)*100+(pan>=.5 and .5 or-.5));f[#f+1]=p.sample~=false and p.sample~=nil and 1 or 0;f[#f+1]=controls.legato_enabled==false and 0 or 1;f[#f+1]=math.floor(cutoff*1000000+.5);f[#f+1]=math.floor(resonance*1000000+.5);f[#f+1]=math.floor(drive*1000000+.5);add(w,M.TAG.PAD,f)end
+ if rack.midi_mapping then
+  local ok,why=require("ReaDrum.core.midi_mapping").validate(rack.midi_mapping);if not ok then die("Rack.midi_mapping",why) end
+  add(w,M.TAG.MIDI_MAPPING,rack.midi_mapping.notes)
+ end
  local groups=rack.round_robin_groups or{};if #groups>M.MAX_GROUPS then die("Rack.round_robin_groups","capacity exceeded")end
  for gi,g in ipairs(groups)do tick()
   if #g.member_pad_ids<2 or #g.member_pad_ids>M.MAX_GROUP_MEMBERS then die("RoundRobinGroup["..gi.."]","member capacity exceeded")end

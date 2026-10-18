@@ -16,6 +16,7 @@ local transport = require("ReaDrum.reaper.transport_map")
 local state = require("ReaDrum.app.state")
 local bridge = require("ReaDrum.app.bridge")
 local project_media = require("ReaDrum.reaper.project_media")
+local midi_mapping = require("ReaDrum.core.midi_mapping")
 
 local Controller = {}
 Controller.__index = Controller
@@ -1122,12 +1123,16 @@ function Controller:flush(force,options)
       self.publish_task=nil;self.publish_build_task=nil;self.publish_awaiting_revision=nil;self:publish()
       self:probe("flush publish build",stage_started)
     end
-    -- A REAPER menu save/autosave does not pass through our Ctrl+S handler.
-    -- Commit persistence with the completed edit, after publishing its audio
-    -- state, so saving cannot capture a newer pattern and an older pad model.
-    -- Mouse gestures are already coalesced before reaching this boundary.
-    self.state_save_task=nil;state.save(self.host,self.project,self.rack)
-    self.state_pending=false;self.state_due=0
+    self.state_save_task=nil
+    if force then
+      state.save(self.host,self.project,self.rack)
+      self.state_pending=false;self.state_due=0
+    else
+      -- Reuse the sliced checkpoint below for encoding and stage into the
+      -- inactive persistence slot. A knob drag must not validate, copy and
+      -- serialize every lane on REAPER's UI thread at each flush.
+      self.state_pending=true;self.state_due=self.host.time_precise()
+    end
   end, debug.traceback)
   if ok then
     self.dirty, self.structural_dirty, self.publish_dirty = false, false, false;self.structural_pad_ids={};self.history_delete_empty_tracks=false
@@ -1243,7 +1248,7 @@ function Controller:render_variation_to_midi()
       -- intended gate instead of dropping or shortening the note.
       local end_qn=event.qn<0 and (raw_end-event.qn) or raw_end
       local rendered_pad=self.rack.pads[event.pad];local rendered_controls=rendered_pad and rendered_pad.default_controls or {}
-      notes[#notes+1]={start_qn=start_qn,end_qn=math.max(start_qn+.001,end_qn),pad=pad_zero,pitch=(36+pad_zero)%128,velocity=event.velocity,
+      notes[#notes+1]={start_qn=start_qn,end_qn=math.max(start_qn+.001,end_qn),pad=pad_zero,pitch=self:pad_midi_note(pad_zero+1),velocity=event.velocity,
         transpose=(event.note or 69)-69,pitch_cents=event.pitch_cents or 0,pan=event.pan or 0,slide=event.slide==true,transient_shift=event.transient_shift or 0,
         glide=math.max(0,math.min(.5,tonumber(rendered_controls.glide) or 0)),filter_cutoff=event.filter_cutoff or 1,
         filter_resonance=event.filter_resonance or 0,drive=event.drive or 0}
@@ -1489,6 +1494,7 @@ function Controller:load_kit()
   local file,err=io.open(path,"rb");if not file then self.status="Could not load kit: "..tostring(err);return end;local raw=file:read("*a");file:close()
   local decoded;ok,decoded=pcall(json.decode,raw);if not ok then self.status="Invalid kit: "..tostring(decoded);return end;local valid,why=model.validate_rack(decoded);if not valid then self.status="Invalid kit: "..tostring(why);return end
   decoded.engine_namespace=self.rack.engine_namespace
+  decoded.midi_mapping=self.rack.midi_mapping and midi_mapping.copy(self.rack.midi_mapping) or nil
   for _,pad in ipairs(decoded.pads or {})do project_media.detach_foreign(pad.sample,project_media.directory(self.host,self.project))end
   self.undo_stack[#self.undo_stack+1]=state.compact(self.rack);self.rack=decoded;self.pattern_index=1;self.variation_index=1;self.selected_pad=1;self.selected_step=1;self.dirty=true;self.structural_dirty=true;self.publish_dirty=true;self.variation_events_dirty=true;self.structural_pad_ids={};self.due=0;self:flush(true);self.status="Kit loaded"
 end
@@ -1982,6 +1988,88 @@ function Controller:set_pad_output_number(indices,number)
   for output_index=#self.rack.outputs,1,-1 do if not used[self.rack.outputs[output_index].id] then table.remove(self.rack.outputs,output_index) end end
   table.sort(self.rack.outputs,function(a,b)local an=a.id=="main"and 1 or tonumber(a.id:match("(%d+)$"))or 99;local bn=b.id=="main"and 1 or tonumber(b.id:match("(%d+)$"))or 99;return an<bn end)
   self:mark_dirty(true);return true
+end
+function Controller:pad_midi_note(index)return midi_mapping.note(self.rack,index or self.selected_pad) end
+function Controller:pad_for_midi_note(note)return midi_mapping.pad(self.rack,note) end
+function Controller:set_pad_midi_note(index,note)
+  local mapping=self.rack.midi_mapping or midi_mapping.factory()
+  local changed,other=midi_mapping.assign(mapping,index,note)
+  if not changed then return false end
+  self.rack.midi_mapping=mapping
+  self:mark_dirty(false)
+  self.status=string.format("Pad %d → MIDI note %d%s",index,note,other and (" (swapped with pad "..other..")") or "")
+  return true
+end
+function Controller:apply_midi_mapping(name)
+  local library,warning=midi_mapping.load_library(self.host)
+  if warning then self.status=warning;return false end
+  local mapping=midi_mapping.find(library,name)
+  if not mapping then self.status="MIDI mapping preset not found";return false end
+  self.rack.midi_mapping=mapping;self:mark_dirty(false)
+  self.status="MIDI mapping applied to this project: "..name;return true
+end
+function Controller:save_midi_mapping(name)
+  name=tostring(name or ""):gsub("[%c]",""):match("^%s*(.-)%s*$"):sub(1,64)
+  if name=="" or name==midi_mapping.FACTORY then self.status="Choose a custom preset name";return false end
+  local library,warning=midi_mapping.load_library(self.host)
+  if warning then self.status=warning;return false end
+  local mapping=midi_mapping.copy(self.rack.midi_mapping or midi_mapping.factory());mapping.name=name
+  local replaced=false
+  for i,preset in ipairs(library.presets) do if preset.name==name then library.presets[i]=mapping;replaced=true;break end end
+  if not replaced then library.presets[#library.presets+1]=mapping end
+  midi_mapping.save_library(self.host,library)
+  self.rack.midi_mapping=midi_mapping.copy(mapping);self:mark_dirty(false)
+  self.status="MIDI mapping preset saved: "..name;return true
+end
+function Controller:set_default_midi_mapping(name)
+  local library,warning=midi_mapping.load_library(self.host)
+  if warning then self.status=warning;return false end
+  if not midi_mapping.find(library,name) then self.status="Save the mapping as a preset first";return false end
+  library.default=name;midi_mapping.save_library(self.host,library)
+  self.status="Default mapping for new projects: "..name;return true
+end
+function Controller:delete_midi_mapping(name)
+  if name==midi_mapping.FACTORY then return false end
+  local library,warning=midi_mapping.load_library(self.host)
+  if warning then self.status=warning;return false end
+  for i,preset in ipairs(library.presets) do if preset.name==name then
+    table.remove(library.presets,i)
+    if library.default==name then library.default=midi_mapping.FACTORY end
+    midi_mapping.save_library(self.host,library)
+    self.status="Preset deleted; project mapping kept";return true
+  end end
+  return false
+end
+function Controller:auto_name_outputs()
+  local names,seen={},{}
+  for _,pad in ipairs(self.rack.pads or {}) do
+    if pad.sample~=false and pad.sample~=nil then
+      local id=pad.output_id or "main"
+      local name=tostring(pad.name or ""):gsub("[%c]",""):match("^%s*(.-)%s*$")
+      if name=="" then name=sample_name(pad) end
+      if name and name~="" then
+        names[id]=names[id] or {};seen[id]=seen[id] or {}
+        if not seen[id][name] then names[id][#names[id]+1]=name;seen[id][name]=true end
+      end
+    end
+  end
+  local changed=false
+  for _,output in ipairs(self.rack.outputs or {}) do
+    if names[output.id] then
+      local name=table.concat(names[output.id]," + ")
+      if output.name~=name then output.name=name;changed=true end
+      local track=self:output_track(output.id)
+      if track then
+        if self.adapter:get_track_string(track,"P_NAME")~=name then
+          self.adapter:set_track_string(track,"P_NAME",name);changed=true
+        end
+        self.adapter:set_track_string(track,"P_EXT:READRUM_OUTPUT_NAME",name)
+      end
+    end
+  end
+  if changed then self:mark_dirty(true) end
+  self.status=changed and "Output names updated from loaded pads" or "Output names are already current"
+  return changed
 end
 function Controller:route_bank_to_outputs(bank_number)
   bank_number=tonumber(bank_number or self.rack.selected_bank)

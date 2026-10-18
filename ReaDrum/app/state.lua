@@ -319,7 +319,10 @@ function M.load(host,project)
   end
   -- Never reconcile/save a blank rack over an existing but unreadable kit.
   if #errors>0 then error(table.concat(errors,"; ")..". Saved ReaDrum state was left intact.",2) end
-  return M.new_rack(M.default_fader_db(host)),false
+  local fresh=M.new_rack(M.default_fader_db(host))
+  local mapping,warning=require("ReaDrum.core.midi_mapping").new_project(host)
+  fresh.midi_mapping=mapping
+  return fresh,false,warning
 end
 
 -- Encode and stage into the inactive slot across frames. Only state_head

@@ -21,6 +21,16 @@ native REAPER track integration, and editable MIDI export.
 ReaDrumXT requires REAPER and ReaImGui. Optional SWS and JS_ReaScriptAPI features
 use guarded fallbacks when those extensions are unavailable.
 
+## MIDI controller mappings
+
+Open **More > MIDI mapping…** to match your controller pads using note numbers,
+individual **Learn** buttons, or **Learn bank**. Save named presets and select
+**Use as default** to remember a layout for new projects. Each project retains
+its own mapping, so later preset changes do not alter existing sessions.
+
+Pad names can be edited at the top of their right-click context menu.
+**More > Auto-name outputs from pads** names output tracks once when selected.
+
 ## Grooves
 
 MIDI groove files are discovered recursively from

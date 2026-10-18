@@ -1,9 +1,11 @@
 -- @description ReaDrumXT - Drum Sampler and Polymetric Step Sequencer
--- @version 0.1.15
+-- @version 0.1.16
 -- @author davvolinni-ui
 -- @changelog
---   Adds verified project sample collection and portable sample references.
---   Adds waveform zoom and pan with improved envelope display.
+--   Adds MIDI controller mapping presets, per-pad and bank MIDI Learn, and a remembered default for new projects.
+--   Preserves project mappings independently of preset and default changes.
+--   Adds editable pad names in context menus and optional output naming from loaded pads.
+--   Adds bank pad routing to outputs 1-16 while preserving other banks and output settings.
 -- @link
 --   Support https://forum.cockos.com/showthread.php?t=310870
 --   Repository https://github.com/davvolinni-ui/ReaDrumXT
